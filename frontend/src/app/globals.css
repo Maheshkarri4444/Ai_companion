@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/* ── Design tokens: professional "AI" blue theme ─────────────────────────── */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sora), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Deep navy for chrome (sidebars, hero surfaces) */
+  --color-navy-600: #22346a;
+  --color-navy-700: #1a2a57;
+  --color-navy-800: #111e42;
+  --color-navy-900: #0a1633;
+  --color-navy-950: #060e24;
+
+  /* App surfaces */
+  --color-canvas: #f4f7fc;
+  --color-line: #e2e8f4;
+  --color-line-strong: #cfd9ea;
+  --color-ink: #0c1730;
+  --color-ink-soft: #33415c;
+  --color-muted: #64748b;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-lift: 0 10px 30px -12px rgb(37 99 235 / 0.28), 0 4px 10px -6px rgb(15 23 42 / 0.12);
+  --shadow-glow: 0 0 0 1px rgb(59 130 246 / 0.25), 0 8px 24px -8px rgb(37 99 235 / 0.45);
+
+  --animate-fade-in: fade-in 0.25s ease-out both;
+  --animate-rise: rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    from { background-position: -400px 0; }
+    to { background-position: 400px 0; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+  ::selection {
+    background: rgb(37 99 235 / 0.18);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-blue-500);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Subtle dotted grid used on hero / auth surfaces. */
+  .bg-ai-grid {
+    background-image: radial-gradient(rgb(148 163 184 / 0.18) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .bg-ai-hero {
+    background:
+      radial-gradient(600px circle at 85% -10%, rgb(56 189 248 / 0.28), transparent 60%),
+      radial-gradient(500px circle at 0% 110%, rgb(99 102 241 / 0.35), transparent 60%),
+      linear-gradient(135deg, var(--color-navy-900), #0f2a6b 55%, #1d4ed8);
+  }
+  .text-gradient-ai {
+    background: linear-gradient(90deg, #60a5fa, #a5b4fc 50%, #67e8f9);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #eef2f9 25%, #e2e8f4 37%, #eef2f9 63%);
+    background-size: 800px 100%;
+    animation: var(--animate-shimmer);
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(148 163 184 / 0.35) transparent;
+  }
+}

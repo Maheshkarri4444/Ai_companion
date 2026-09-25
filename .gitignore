@@ -1,0 +1,27 @@
+# ── Secrets: never commit real credentials (use the .env.example files) ──
+.env
+.env.*
+!.env.example
+
+# ── Dependencies & build output ──
+node_modules/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Logs & OS/editor noise ──
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/
+.idea/
+
+# ── Local test/eval artifacts ──
+.mongodb-binaries/
+backend/evals/output/
+
+# ── Company-provided brief (not ours to publish) ──
+Project_Requirements.pdf

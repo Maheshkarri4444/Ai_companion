@@ -1,0 +1,18 @@
+{
+  "name": "ai-study-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Study Companion — Next.js frontend + Node.js/Express API + MongoDB",
+  "scripts": {
+    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
+    "dev": "concurrently -k -n api,web -c blue,cyan \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "test": "npm --prefix backend test",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
+    "lint": "npm --prefix frontend run lint",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "seed:admin": "npm --prefix backend run seed:admin"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
