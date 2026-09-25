@@ -2,6 +2,7 @@ import { enqueueJob, JobError } from '../../jobs/queue';
 import { registerJobHandler } from '../../jobs/registry';
 import { EVAL_SUBJECTS, type EvalSubject } from '../../models/aiEvaluation.model';
 import { getJudge, judgeJobKey, registerJudge } from './evaluation.service';
+import { judgeQuizQuestion } from './quiz-judge';
 import { judgeTutorMessage } from './tutor-judge';
 
 export async function enqueueJudge(input: { subjectType: EvalSubject; subjectId: string; ownerId?: string; projectId?: string; priority?: number }) {
@@ -18,6 +19,7 @@ export async function enqueueJudge(input: { subjectType: EvalSubject; subjectId:
 
 export function registerEvaluationJobs() {
   registerJudge('tutor_message', judgeTutorMessage);
+  registerJudge('quiz_question', judgeQuizQuestion);
   registerJobHandler('ai.evaluate', async ({ job, signal }) => {
     const { subjectType, subjectId } = job.payload as { subjectType: EvalSubject; subjectId: string };
     if (!EVAL_SUBJECTS.includes(subjectType)) throw new JobError('UNKNOWN_SUBJECT', `Unknown evaluation subject ${subjectType}`);

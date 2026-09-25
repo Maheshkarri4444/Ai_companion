@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { ai } from '../../ai';
 import { EVALUATION_PROMPTS } from '../../ai/prompts/evaluation';
 import { CONCEPTS_PROMPT, OCR_PROMPT } from '../../ai/prompts/knowledge';
+import { QUIZ_PROMPTS } from '../../ai/prompts/quiz';
 import { TUTOR_PROMPTS } from '../../ai/prompts/tutor';
 import { AI_FEATURES } from '../../ai/types';
 import { config } from '../../config/env';
@@ -12,6 +13,7 @@ import { AiEvaluation, EvalRun, type IAiEvaluation } from '../../models/aiEvalua
 import { Job } from '../../models/job.model';
 import { Message } from '../../models/message.model';
 import { Project } from '../../models/project.model';
+import { Attempt } from '../../models/quiz.model';
 import { registeredContextProviders } from '../learning-context/providers';
 import { registeredTutorTools } from '../tutor/tools';
 import { userRefs } from './admin.service';
@@ -267,13 +269,16 @@ export async function getEvaluationOverview(query: RangeQuery) {
   const match = { createdAt: { $gte: since } };
   const { keys, groupKey } = bucketsFor(range);
 
-  const [byEvaluator, judgeAverages, byPromptVersion, ruleFlags, grounding, series, recentFailures, runs] = await Promise.all([
+  // The headline evaluator cards describe Zoya's answers; quiz items have their own section (`assessment`), while the
+  // verdict series and the failure list cover every evaluated subject.
+  const tutor = { ...match, subjectType: 'tutor_message' };
+  const [byEvaluator, judgeAverages, byPromptVersion, ruleFlags, grounding, series, recentFailures, runs, assessment] = await Promise.all([
     AiEvaluation.aggregate<{ _id: { evaluator: string; verdict: string }; n: number }>([
-      { $match: match },
+      { $match: tutor },
       { $group: { _id: { evaluator: '$evaluator', verdict: '$verdict' }, n: { $sum: 1 } } },
     ]),
     AiEvaluation.aggregate<Record<string, number | null>>([
-      { $match: { ...match, evaluator: 'llm_judge' } },
+      { $match: { ...tutor, evaluator: 'llm_judge' } },
       {
         $group: {
           _id: null,
@@ -288,7 +293,7 @@ export async function getEvaluationOverview(query: RangeQuery) {
     ]),
     // Regression tracking: judge scores per prompt version.
     AiEvaluation.aggregate<{ _id: string | null; n: number; groundedness: number; citationAccuracy: number; pass: number }>([
-      { $match: { ...match, evaluator: 'llm_judge' } },
+      { $match: { ...tutor, evaluator: 'llm_judge' } },
       {
         $group: {
           _id: '$promptVersion',
@@ -301,7 +306,7 @@ export async function getEvaluationOverview(query: RangeQuery) {
       { $sort: { _id: -1 } },
     ]),
     AiEvaluation.aggregate<{ _id: string; n: number }>([
-      { $match: { ...match, evaluator: 'rules' } },
+      { $match: { ...tutor, evaluator: 'rules' } },
       { $unwind: '$flags' },
       { $group: { _id: '$flags', n: { $sum: 1 } } },
       { $sort: { n: -1 } },
@@ -324,6 +329,7 @@ export async function getEvaluationOverview(query: RangeQuery) {
     ]),
     AiEvaluation.find({ ...match, verdict: 'fail' }).sort({ createdAt: -1 }).limit(8).lean(),
     EvalRun.find({}, { cases: 0 }).sort({ createdAt: -1 }).limit(10).lean(),
+    assessmentQuality(match),
   ]);
 
   const evaluators = ['rules', 'llm_judge', 'learner_feedback', 'offline_suite'].map((evaluator) => {
@@ -358,6 +364,7 @@ export async function getEvaluationOverview(query: RangeQuery) {
     topRuleFailures: ruleFlags.map((r) => ({ rule: r._id, count: r.n })),
     groundingDistribution: grounding.map((g) => ({ status: g._id ?? 'unknown', count: g.n })),
     series: keys.map((key) => ({ bucket: key, pass: bySeries.get(key)?.pass ?? 0, warn: bySeries.get(key)?.warn ?? 0, fail: bySeries.get(key)?.fail ?? 0 })),
+    assessment,
     recentFailures: recentFailures.map(toEvaluationDto),
     offlineRuns: runs.map((r) => ({
       id: r._id.toString(),
@@ -370,6 +377,82 @@ export async function getEvaluationOverview(query: RangeQuery) {
       durationMs: r.durationMs,
       createdAt: r.createdAt,
     })),
+  };
+}
+
+const topFlags = (match: Record<string, unknown>) =>
+  AiEvaluation.aggregate<{ _id: string; n: number }>([{ $match: match }, { $unwind: '$flags' }, { $group: { _id: '$flags', n: { $sum: 1 } } }, { $sort: { n: -1 } }, { $limit: 6 }]);
+
+/**
+ * Assessment quality (PRD §14 "question quality, grading quality, structured output reliability"): rule verdicts on
+ * every generated question and every AI grading, judge scores on sampled questions, learner reports, grading backlog.
+ */
+async function assessmentQuality(match: Record<string, unknown>) {
+  const questions = { ...match, subjectType: 'quiz_question' };
+  const gradings = { ...match, subjectType: 'quiz_grading' };
+  const [generation, generationFlags, grading, gradingFlags, judge, reports, pending, failed] = await Promise.all([
+    AiEvaluation.aggregate<{ n: number; valid: number; firstPass: number; clean: number }>([
+      { $match: { ...questions, evaluator: 'rules' } },
+      { $group: { _id: null, n: { $sum: 1 }, valid: { $sum: '$scores.valid' }, firstPass: { $sum: '$scores.firstPass' }, clean: { $sum: '$scores.clean' } } },
+    ]),
+    topFlags({ ...questions, evaluator: 'rules' }),
+    AiEvaluation.aggregate<{ n: number; pass: number; consistent: number; grounded: number }>([
+      { $match: { ...gradings, evaluator: 'rules' } },
+      {
+        $group: {
+          _id: null,
+          n: { $sum: 1 },
+          pass: { $sum: { $cond: [{ $eq: ['$verdict', 'pass'] }, 1, 0] } },
+          consistent: { $avg: '$scores.consistent' },
+          grounded: { $avg: '$scores.grounded' },
+        },
+      },
+    ]),
+    topFlags({ ...gradings, evaluator: 'rules' }),
+    AiEvaluation.aggregate<Record<string, number>>([
+      { $match: { ...questions, evaluator: 'llm_judge' } },
+      {
+        $group: {
+          _id: null,
+          n: { $sum: 1 },
+          pass: { $sum: { $cond: [{ $eq: ['$verdict', 'pass'] }, 1, 0] } },
+          answerable: { $avg: '$scores.answerable' },
+          keyCorrect: { $avg: '$scores.keyCorrect' },
+          distractors: { $avg: '$scores.distractors' },
+          clarity: { $avg: '$scores.clarity' },
+          difficultyMatch: { $avg: '$scores.difficultyMatch' },
+          levelMatch: { $avg: '$scores.levelMatch' },
+        },
+      },
+    ]),
+    AiEvaluation.countDocuments({ ...match, evaluator: 'learner_feedback', subjectType: { $in: ['quiz_question', 'quiz_grading'] } }),
+    Attempt.countDocuments({ 'grading.status': 'pending' }),
+    Attempt.countDocuments({ 'grading.status': 'failed' }),
+  ]);
+  const g = generation[0];
+  const r = grading[0];
+  const j = judge[0];
+  return {
+    generation: g
+      ? { items: g.n, validRate: round(g.valid / g.n, 4), firstPassRate: round(g.firstPass / g.n, 4), cleanRate: round(g.clean / g.n, 4), topFlags: generationFlags.map((f) => ({ flag: f._id, count: f.n })) }
+      : null,
+    grading: r
+      ? { graded: r.n, passRate: round(r.pass / r.n, 4), consistency: round(r.consistent, 3), grounded: round(r.grounded, 3), topFlags: gradingFlags.map((f) => ({ flag: f._id, count: f.n })) }
+      : null,
+    judge: j
+      ? {
+          samples: j.n,
+          passRate: round(j.pass / j.n, 4),
+          answerable: round(j.answerable, 3),
+          keyCorrect: round(j.keyCorrect, 3),
+          distractors: round(j.distractors, 3),
+          clarity: round(j.clarity, 3),
+          difficultyMatch: round(j.difficultyMatch, 3),
+          levelMatch: round(j.levelMatch, 3),
+        }
+      : null,
+    learnerReports: reports,
+    gradingBacklog: { pending, failed },
   };
 }
 
@@ -434,8 +517,9 @@ export function getAiConfiguration() {
       embedding: { model: config.AI_EMBEDDING_MODEL, dimensions: config.AI_EMBEDDING_DIM },
     },
     tutor: { reasoning: config.AI_TUTOR_REASONING, judgeSampleRate: config.TUTOR_JUDGE_SAMPLE_RATE },
+    quiz: { judgeSampleRate: config.QUIZ_JUDGE_SAMPLE_RATE },
     retrieval: { strongScore: config.RETRIEVAL_STRONG_SCORE, minScore: config.RETRIEVAL_MIN_SCORE, vectorSearch: config.VECTOR_SEARCH_ENABLED },
-    promptVersions: { ...TUTOR_PROMPTS, ...EVALUATION_PROMPTS, concepts: CONCEPTS_PROMPT.version, ocr: OCR_PROMPT.version },
+    promptVersions: { ...TUTOR_PROMPTS, ...EVALUATION_PROMPTS, ...QUIZ_PROMPTS, concepts: CONCEPTS_PROMPT.version, ocr: OCR_PROMPT.version },
     features: [...AI_FEATURES],
     tools: registeredTutorTools(),
     contextProviders: registeredContextProviders(),

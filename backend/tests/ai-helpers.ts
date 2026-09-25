@@ -28,6 +28,77 @@ export interface MockScripts {
   judge?: (prompt: string) => Record<string, unknown>;
   concepts?: (prompt: string) => Record<string, unknown>;
   ocr?: (prompt: string) => Record<string, unknown>;
+  /** Quiz generation; `request` parsed from the prompt. Return undefined to use the default valid question. */
+  quizQuestion?: (prompt: string, request: QuizRequest) => Record<string, unknown> | undefined;
+  quizGrade?: (prompt: string, answer: string) => Record<string, unknown> | undefined;
+  quizJudge?: (prompt: string) => Record<string, unknown>;
+  mistakePattern?: (prompt: string) => Record<string, unknown>;
+}
+
+export interface QuizRequest {
+  type: 'mcq' | 'open';
+  concept: string;
+  difficulty: number;
+  level: string;
+}
+
+let questionCounter = 0;
+
+/** A valid question for whatever the generator was asked (type, concept, difficulty, level). */
+export function defaultQuizQuestion(request: QuizRequest): Record<string, unknown> {
+  questionCounter += 1;
+  const common = {
+    explanation: `The materials explain how ${request.concept} works, which supports the correct answer [S1].`,
+    sourceIds: ['S1'],
+    difficulty: request.difficulty,
+    cognitiveLevel: request.level,
+  };
+  if (request.type === 'open') {
+    return {
+      ...common,
+      stem: `Question ${questionCounter}: explain in your own words how ${request.concept} works and why it matters.`,
+      keyPoints: [`${request.concept} follows the rule described in the notes`, `It matters because it reduces the loss`],
+      sampleAnswer: `${request.concept} follows the rule described in the notes, and it matters because it reduces the loss during training.`,
+    };
+  }
+  return {
+    ...common,
+    stem: `Question ${questionCounter}: which statement about ${request.concept} is correct?`,
+    options: [
+      { id: 'A', text: `${request.concept} follows the rule described in the notes`, rationale: 'Correct: this is what the notes state.' },
+      { id: 'B', text: 'It makes the loss grow on purpose', rationale: 'Wrong: training minimises the loss.' },
+      { id: 'C', text: 'It only applies to test data', rationale: 'Wrong: it is used during training.' },
+      { id: 'D', text: 'It removes the need for a learning rate', rationale: 'Wrong: the learning rate still scales updates.' },
+    ],
+    correctOptionId: 'A',
+  };
+}
+
+export function parseQuizRequest(prompt: string): QuizRequest {
+  return {
+    type: /Question type: open-ended/.test(prompt) ? 'open' : 'mcq',
+    concept: prompt.match(/Concept to assess: ([^\n—]+?)(?: —|\n)/)?.[1]?.trim() ?? 'the concept',
+    difficulty: Number(prompt.match(/Difficulty: (\d)\/5/)?.[1] ?? 3),
+    level: prompt.match(/Cognitive level: (\w+)/)?.[1] ?? 'understand',
+  };
+}
+
+/** Default grading: an answer mentioning "wrong" misses everything; anything else covers every key point. */
+export function defaultQuizGrade(prompt: string, answer: string): Record<string, unknown> {
+  const count = (prompt.match(/^K\d+\./gm) ?? []).length;
+  const wrong = /wrong/i.test(answer);
+  const quote = answer.split(/\s+/).slice(0, 4).join(' ');
+  return {
+    keyPoints: Array.from({ length: count }, (_, i) => ({ id: `K${i + 1}`, status: wrong ? 'missing' : 'covered', evidence: wrong ? '' : quote })),
+    accuracy: wrong ? 1 : 5,
+    relevance: wrong ? 3 : 5,
+    reasoning: wrong ? 1 : 4,
+    misconceptions: wrong ? ['Believes the opposite of what the notes say'] : [],
+    understood: wrong ? [] : ['You explained the rule clearly.'],
+    missing: wrong ? ['You need to explain how the rule reduces the loss.'] : [],
+    feedback: wrong ? 'This answer contradicts the notes. Review how the rule reduces the loss.' : 'Clear and complete answer that covers the key points.',
+    overallScore: wrong ? 0.05 : 0.95,
+  };
 }
 
 const textOf = (request: ProviderRequest) =>
@@ -93,6 +164,32 @@ export function installMockAI(scripts: MockScripts = {}) {
         );
       }
       if (system.includes('transcribe')) return JSON.stringify(scripts.ocr?.(prompt) ?? { pages: [] });
+      if (system.includes('You write assessment questions')) {
+        const request = parseQuizRequest(prompt);
+        return JSON.stringify(scripts.quizQuestion?.(prompt, request) ?? defaultQuizQuestion(request));
+      }
+      if (system.includes('fair, precise examiner')) {
+        const answer = prompt.match(/<answer[^>]*>\n([\s\S]*?)\n<\/answer>/)?.[1] ?? '';
+        return JSON.stringify(scripts.quizGrade?.(prompt, answer) ?? defaultQuizGrade(prompt, answer));
+      }
+      if (system.includes('strict reviewer of assessment items')) {
+        return JSON.stringify(
+          scripts.quizJudge?.(prompt) ?? {
+            answerable: 5,
+            keyCorrect: 5,
+            distractors: 4,
+            clarity: 5,
+            difficultyMatch: 4,
+            levelMatch: 4,
+            issues: [],
+            verdict: 'pass',
+            rationale: 'Answerable from S1 with a correct key.',
+          },
+        );
+      }
+      if (system.includes("repeated mistakes")) {
+        return JSON.stringify(scripts.mistakePattern?.(prompt) ?? { pattern: 'Confuses the direction of the weight update with the gradient direction', salience: 0.8 });
+      }
       return 'Mock response.';
     },
   });

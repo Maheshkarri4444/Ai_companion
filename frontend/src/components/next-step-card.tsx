@@ -1,4 +1,4 @@
-import { ArrowRight, Clock, FileUp, FolderPlus, Layers, MessageSquareText, PlayCircle, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowRight, Clock, FileUp, FolderPlus, Layers, ListChecks, MessageSquareText, PlayCircle, RotateCcw, Sparkles, Target } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { NextStep } from "@/lib/types";
@@ -64,6 +64,27 @@ export function describeNextStep(step: NextStep): StepView {
         body: "Pick up your last conversation — Zoya remembers where you left off and what you found tricky.",
         cta: { label: "Continue conversation", href: `/projects/${step.projectId}/tutor?c=${step.conversationId}` },
       };
+    case "resume_quiz":
+      return {
+        icon: <ListChecks />,
+        title: `Finish your quiz in ${step.projectName}`,
+        body: `You've answered ${step.answered} of ${step.target} questions. Pick up where you left off — every answer updates your mastery.`,
+        cta: { label: "Resume quiz", href: `/projects/${step.projectId}/quiz/${step.sessionId}` },
+      };
+    case "start_quiz":
+      return step.reason === "practice_weak" && step.conceptId && step.conceptName
+        ? {
+            icon: <Target />,
+            title: `Practise ${step.conceptName}`,
+            body: `It's your weakest concept so far${step.mastery != null ? ` (${Math.round(step.mastery * 100)}% mastery)` : ""}. A short focused quiz is the quickest way to close the gap.`,
+            cta: { label: "Practise now", href: `/projects/${step.projectId}/quiz?focus=${step.conceptId}&count=5` },
+          }
+        : {
+            icon: <ListChecks />,
+            title: "Check what you've learned",
+            body: "You've studied with Zoya — now test yourself. An adaptive quiz written from your materials shows what you know and what to revisit.",
+            cta: { label: "Take a quiz", href: `/projects/${step.projectId}/quiz` },
+          };
     case "continue_project":
       return {
         icon: <PlayCircle />,

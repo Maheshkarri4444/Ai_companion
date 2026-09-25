@@ -177,6 +177,10 @@
   color: var(--color-ink-soft);
   overflow-wrap: anywhere;
 }
+/* Quiz text reuses the renderer at other sizes (unlayered like .zoya-prose, so Tailwind utilities cannot override it). */
+.zoya-prose.prose-stem { font-size: 1.0625rem; line-height: 1.6; font-weight: 500; color: var(--color-ink); }
+.zoya-prose.prose-option { color: var(--color-ink); line-height: 1.55; }
+.zoya-prose.prose-note { font-size: 0.8125rem; line-height: 1.55; color: var(--color-muted); }
 .zoya-prose > :first-child { margin-top: 0; }
 .zoya-prose > :last-child { margin-bottom: 0; }
 .zoya-prose p { margin: 0.6em 0; }

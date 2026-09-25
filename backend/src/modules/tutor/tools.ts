@@ -41,7 +41,8 @@ export interface TutorTool<A = unknown> {
   maxCallsPerTurn?: number;
   /** Shown in the UI while the tool runs ("Searching your materials…"). */
   label: string;
-  execute(args: A, ctx: ToolContext): Promise<{ result: Record<string, unknown>; summary: string }>;
+  /** `data` is stored on the message for the UI (e.g. a server-built "Start quiz" link); the model sees `result`. */
+  execute(args: A, ctx: ToolContext): Promise<{ result: Record<string, unknown>; summary: string; data?: Record<string, unknown> }>;
 }
 
 const tools = new Map<string, TutorTool<never>>();
@@ -82,13 +83,14 @@ function sanitizeArgs(args: Record<string, unknown> | undefined): Record<string,
 export async function executeToolCall(call: AIFunctionCall, ctx: ToolContext): Promise<{ response: Record<string, unknown>; record: IToolCall }> {
   const started = Date.now();
   const safeArgs = sanitizeArgs(call.args);
-  const record = (ok: boolean, summary: string, error: string | null = null): IToolCall => ({
+  const record = (ok: boolean, summary: string, error: string | null = null, data: Record<string, unknown> | null = null): IToolCall => ({
     name: truncate(call.name, 60),
     args: safeArgs,
     ok,
     error,
     summary: truncate(summary, 200),
     latencyMs: Date.now() - started,
+    data,
   });
 
   const tool = tools.get(call.name);
@@ -113,13 +115,13 @@ export async function executeToolCall(call: AIFunctionCall, ctx: ToolContext): P
 
   let timer: NodeJS.Timeout | undefined;
   try {
-    const { result, summary } = await Promise.race([
+    const { result, summary, data } = await Promise.race([
       tool.execute(parsed.data as never, ctx),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Tool timed out')), TOOL_TIMEOUT_MS);
       }),
     ]);
-    return { response: result, record: record(true, summary) };
+    return { response: result, record: record(true, summary, null, data ?? null) };
   } catch (err) {
     if (err instanceof AIError && err.kind === 'aborted') throw err;
     logger.warn({ tool: tool.name, err: (err as Error).message }, 'Tutor tool failed');

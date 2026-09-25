@@ -28,6 +28,15 @@ export const uploadRateLimit = rateLimit({
   keyGenerator: (req) => req.auth?.userId ?? clientIp(req),
 });
 
+/** Quiz starts, questions and answers per user: generation and open-answer grading both call the models. */
+export const quizRateLimit = rateLimit({
+  ...shared,
+  windowMs: 60 * 1000,
+  limit: 40,
+  keyGenerator: (req) => req.auth?.userId ?? clientIp(req),
+  handler: (_req, _res, next) => next(new AppError(429, 'RATE_LIMITED', 'You are going very fast. Please wait a moment before the next question.')),
+});
+
 /** Tutor messages per user: protects AI spend and the provider quota. */
 export const tutorRateLimit = rateLimit({
   ...shared,

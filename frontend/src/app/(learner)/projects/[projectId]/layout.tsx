@@ -34,7 +34,7 @@ const tabs = [
   { segment: "", label: "Overview", icon: LayoutDashboard },
   { segment: "materials", label: "Materials", icon: FileText },
   { segment: "tutor", label: "AI Tutor", icon: MessageSquare },
-  { segment: "quiz", label: "Quiz", icon: ListChecks, soon: true },
+  { segment: "quiz", label: "Quiz", icon: ListChecks },
   { segment: "growth", label: "Growth", icon: TrendingUp, soon: true },
   { segment: "analytics", label: "Analytics", icon: ChartColumn, soon: true },
 ];
@@ -133,7 +133,8 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
         <ul className="flex min-w-max gap-1">
           {tabs.map(({ segment, label, icon: Icon, soon }) => {
             const href = segment ? `${base}/${segment}` : base;
-            const active = !soon && pathname === href;
+            // Sections own their sub-routes (e.g. a quiz session under /quiz); Overview is the exact path only.
+            const active = !soon && (pathname === href || (Boolean(segment) && pathname.startsWith(`${href}/`)));
             const content = (
               <>
                 <Icon className="size-4" />

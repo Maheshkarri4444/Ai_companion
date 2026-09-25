@@ -18,6 +18,10 @@ export const ACTIVITY_TYPES = [
   'material.reprocessed',
   'tutor.answered',
   'tutor.feedback',
+  'quiz.started',
+  'quiz.question_answered',
+  'quiz.completed',
+  'mastery.updated',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

@@ -8,7 +8,7 @@ import { materialStatusByProject, materialTotals } from '../aggregates';
 import { deleteProjectData } from '../cascade/cascade.service';
 import { emptyStatusCounts, toMaterialDto, toProjectDto, toSpaceSummary } from '../serializers';
 import { getOwnedSpace } from '../spaces/spaces.service';
-import { projectNextStep, touchActivity, tutorStateFor } from '../workspace';
+import { projectNextStep, quizStateFor, touchActivity, tutorStateFor } from '../workspace';
 import type { CreateProjectInput, UpdateProjectInput } from './projects.schemas';
 
 /** Ownership-scoped lookup: another user's Project is indistinguishable from a missing one (404). */
@@ -63,12 +63,13 @@ export async function listRecentProjects(ownerId: string, limit: number) {
 
 export async function getProjectDashboard(ownerId: string, projectId: string) {
   const project = await getOwnedProject(ownerId, projectId);
-  const [space, totals, recentMaterials, recentActivity, tutor] = await Promise.all([
+  const [space, totals, recentMaterials, recentActivity, tutor, quiz] = await Promise.all([
     Space.findOne({ _id: project.spaceId, ownerId: project.ownerId }, { name: 1, color: 1, icon: 1 }).lean(),
     materialTotals({ ownerId: project.ownerId, projectId: project._id }),
     Material.find({ ownerId: project.ownerId, projectId: project._id }).sort({ createdAt: -1 }).limit(5).lean(),
     listUserActivity(ownerId, { projectId, limit: 10 }),
     tutorStateFor(project),
+    quizStateFor(project),
   ]);
 
   return {
@@ -80,9 +81,18 @@ export async function getProjectDashboard(ownerId: string, projectId: string) {
       totalPages: totals.totalPages,
       materialsByStatus: totals.byStatus,
     },
+    // "How well am I learning it?" — assessment evidence and concept mastery (PRD §4 Project dashboard).
+    learning: {
+      tutorUsed: Boolean(tutor.lastConversation),
+      quizzesCompleted: quiz.completedCount,
+      activeQuiz: quiz.active,
+      questionsAnswered: quiz.questionsAnswered,
+      accuracy: quiz.questionsAnswered ? Math.round((quiz.correct / quiz.questionsAnswered) * 1000) / 1000 : null,
+      mastery: quiz.mastery,
+    },
     recentMaterials: recentMaterials.map(toMaterialDto),
     recentActivity,
-    nextStep: projectNextStep(project, totals.byStatus, tutor),
+    nextStep: projectNextStep(project, totals.byStatus, tutor, quiz),
   };
 }
 

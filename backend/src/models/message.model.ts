@@ -30,6 +30,8 @@ export interface IToolCall {
   error: string | null;
   summary: string;
   latencyMs: number;
+  /** Server-built data for the UI (e.g. a "Start quiz" link); never model-authored. */
+  data?: Record<string, unknown> | null;
 }
 
 export interface IMessage {
@@ -127,7 +129,7 @@ const messageSchema = new Schema<IMessage>(
     toolCalls: {
       type: [
         new Schema(
-          { name: String, args: Schema.Types.Mixed, ok: Boolean, error: String, summary: String, latencyMs: Number },
+          { name: String, args: Schema.Types.Mixed, ok: Boolean, error: String, summary: String, latencyMs: Number, data: { type: Schema.Types.Mixed, default: null } },
           { _id: false },
         ),
       ],

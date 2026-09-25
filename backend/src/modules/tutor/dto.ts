@@ -69,7 +69,7 @@ export function toMessageDto(m: IMessage) {
       sectionTitle,
     })),
     suggestions: m.suggestions ?? [],
-    toolCalls: (m.toolCalls ?? []).map((t) => ({ name: t.name, ok: t.ok, summary: t.summary })),
+    toolCalls: (m.toolCalls ?? []).map((t) => ({ name: t.name, ok: t.ok, summary: t.summary, data: t.data ?? null })),
     feedback: m.feedback ? { rating: m.feedback.rating, reason: m.feedback.reason ?? null } : null,
     error: m.error ? { code: m.error.code, message: m.error.message } : null,
     metrics: m.role === 'assistant' ? { latencyMs: m.metrics?.latencyMs ?? null, ttftMs: m.metrics?.ttftMs ?? null, model: m.metrics?.model ?? null } : null,

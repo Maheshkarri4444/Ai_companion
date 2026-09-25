@@ -1,6 +1,6 @@
 import type { Types } from 'mongoose';
 import { logger } from '../../lib/logger';
-import { truncate } from '../../lib/text';
+import { sha256, truncate } from '../../lib/text';
 import { AiEvaluation, type EvalSubject, type Evaluator, type Verdict } from '../../models/aiEvaluation.model';
 
 /*
@@ -74,3 +74,10 @@ export function getJudge(subjectType: EvalSubject) {
 }
 
 export const judgeJobKey = (subjectType: EvalSubject, subjectId: string) => `ai.evaluate:${subjectType}:${subjectId}`;
+
+/** Deterministic sampling: the same subject always gets the same decision, across retries and processes. */
+export function sampled(id: string, rate: number) {
+  if (rate <= 0) return false;
+  if (rate >= 1) return true;
+  return parseInt(sha256(id).slice(0, 8), 16) / 0xffffffff < rate;
+}

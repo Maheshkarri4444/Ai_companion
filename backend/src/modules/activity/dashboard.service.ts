@@ -4,7 +4,7 @@ import { Project } from '../../models/project.model';
 import { Space } from '../../models/space.model';
 import { materialTotals } from '../aggregates';
 import { listRecentProjects } from '../projects/projects.service';
-import { projectNextStep, tutorStateFor, type NextStep } from '../workspace';
+import { projectNextStep, quizStateFor, tutorStateFor, type NextStep } from '../workspace';
 import { listUserActivity } from './activity.service';
 
 /**
@@ -57,5 +57,6 @@ async function computeNextStep(owner: ReturnType<typeof toObjectId>): Promise<Ne
     { $group: { _id: '$status', n: { $sum: 1 } } },
   ]);
   for (const row of rows) byStatus[row._id] = row.n;
-  return projectNextStep(latestProject, byStatus, await tutorStateFor(latestProject));
+  const [tutor, quiz] = await Promise.all([tutorStateFor(latestProject), quizStateFor(latestProject)]);
+  return projectNextStep(latestProject, byStatus, tutor, quiz);
 }

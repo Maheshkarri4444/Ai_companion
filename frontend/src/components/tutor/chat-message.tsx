@@ -7,6 +7,7 @@ import {
   Copy,
   FileText,
   Globe2,
+  ListChecks,
   Loader2,
   RotateCcw,
   SearchX,
@@ -260,6 +261,19 @@ export function FollowUps({ suggestions, onSelect, disabled }: { suggestions: st
   );
 }
 
+/** Quiz offers from the `propose_quiz` tool; only links into this Project's quiz are ever rendered. */
+function quizOffers(message: TutorMessage, projectId: string): Array<{ href: string; label: string }> {
+  const prefix = `/projects/${projectId}/quiz`;
+  return message.toolCalls.flatMap((call) => {
+    const data = call.data;
+    if (!call.ok || !data || data.kind !== "quiz_link") return [];
+    const { href, label } = data as { href?: unknown; label?: unknown };
+    if (typeof href !== "string" || typeof label !== "string") return [];
+    if (href !== prefix && !href.startsWith(`${prefix}?`)) return [];
+    return [{ href, label }];
+  });
+}
+
 export function AssistantMessage({
   message,
   projectId,
@@ -281,6 +295,7 @@ export function AssistantMessage({
 }) {
   const insufficient = message.grounding?.status === "insufficient";
   const toolSummary = message.toolCalls.filter((t) => t.ok).map((t) => t.summary);
+  const offers = quizOffers(message, projectId);
 
   return (
     <div className="flex gap-3">
@@ -345,6 +360,20 @@ export function AssistantMessage({
                 </Link>
               </div>
             )}
+
+            {offers.map((offer) => (
+              <div key={offer.href} className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-100 bg-linear-to-r from-blue-50 to-indigo-50/60 p-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-blue-500 to-indigo-600 text-white">
+                  <ListChecks className="size-4" />
+                </span>
+                <p className="min-w-0 flex-1 basis-48 text-[13px] text-blue-950">
+                  <span className="font-semibold">Practice quiz ready.</span> Questions come from your materials and adapt to your answers.
+                </p>
+                <Link href={offer.href} className={buttonClasses("primary", "sm")}>
+                  {offer.label}
+                </Link>
+              </div>
+            ))}
 
             {isLast && <FollowUps suggestions={message.suggestions} onSelect={onFollowUp} disabled={busy} />}
 

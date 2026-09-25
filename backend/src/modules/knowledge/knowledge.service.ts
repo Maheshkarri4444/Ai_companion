@@ -4,8 +4,10 @@ import { AppError } from '../../lib/errors';
 import { toObjectId } from '../../lib/validation';
 import { Job } from '../../models/job.model';
 import { Chunk, Concept, MaterialPage } from '../../models/knowledge.model';
+import { Mastery } from '../../models/mastery.model';
 import { Material, type IMaterial } from '../../models/material.model';
 import { recordEvent } from '../activity/activity.service';
+import { bandOf, masteryOf } from '../mastery/estimator';
 import { getOwnedMaterial } from '../materials/materials.service';
 import { getOwnedProject } from '../projects/projects.service';
 import { toMaterialDto } from '../serializers';
@@ -76,25 +78,34 @@ export async function deleteProjectKnowledge(ownerId: Types.ObjectId, projectId:
 
 export async function listProjectConcepts(ownerId: string, projectId: string) {
   const project = await getOwnedProject(ownerId, projectId);
-  const concepts = await Concept.find({ ownerId: project.ownerId, projectId: project._id })
-    .sort({ importance: -1, chunkCount: -1, name: 1 })
-    .limit(200)
-    .lean();
+  const [concepts, masteries] = await Promise.all([
+    Concept.find({ ownerId: project.ownerId, projectId: project._id }).sort({ importance: -1, chunkCount: -1, name: 1 }).limit(200).lean(),
+    Mastery.find({ ownerId: project.ownerId, projectId: project._id }, { conceptId: 1, theta: 1, evidenceCount: 1, lastPracticedAt: 1 }).lean(),
+  ]);
   const materialIds = [...new Set(concepts.flatMap((c) => c.sources.map((s) => s.materialId.toString())))];
   const materials = await Material.find({ _id: { $in: materialIds.map(toObjectId) } }, { title: 1 }).lean();
   const titleOf = new Map(materials.map((m) => [m._id.toString(), m.title]));
-  return concepts.map((c) => ({
-    id: c._id.toString(),
-    name: c.name,
-    description: c.description,
-    importance: c.importance,
-    chunkCount: c.chunkCount,
-    sources: c.sources.map((s) => ({
-      materialId: s.materialId.toString(),
-      materialTitle: titleOf.get(s.materialId.toString()) ?? 'Material',
-      pages: s.pages,
-    })),
-  }));
+  const masteryOfConcept = new Map(masteries.map((m) => [m.conceptId.toString(), m]));
+  const now = new Date();
+  return concepts.map((c) => {
+    const m = masteryOfConcept.get(c._id.toString());
+    const mastery = m ? masteryOf(m, now) : null;
+    return {
+      id: c._id.toString(),
+      name: c.name,
+      description: c.description,
+      importance: c.importance,
+      chunkCount: c.chunkCount,
+      sources: c.sources.map((s) => ({
+        materialId: s.materialId.toString(),
+        materialTitle: titleOf.get(s.materialId.toString()) ?? 'Material',
+        pages: s.pages,
+      })),
+      mastery,
+      masteryBand: bandOf(mastery),
+      evidenceCount: m?.evidenceCount ?? 0,
+    };
+  });
 }
 
 export async function getMaterialPage(ownerId: string, projectId: string, materialId: string, pageNumber: number) {

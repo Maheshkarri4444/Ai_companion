@@ -8,6 +8,11 @@ import { ErrorState, Skeleton } from "@/components/ui/feedback";
 import { useMaterialPage } from "@/lib/queries";
 import type { TutorSource } from "@/lib/types";
 
+/** What the viewer needs: a Tutor answer's source, or a quiz question's. */
+export type ViewableSource = Pick<TutorSource, "materialId" | "materialTitle" | "pageStart" | "pageEnd" | "sectionTitle" | "snippet"> & {
+  flagged?: boolean;
+};
+
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Finds the cited passage in the page text, tolerant of line breaks (snippets are whitespace-normalised). */
@@ -45,7 +50,7 @@ export function SourceViewer({
   onClose,
 }: {
   projectId: string;
-  source: TutorSource | null;
+  source: ViewableSource | null;
   onClose: () => void;
 }) {
   return (
@@ -61,7 +66,7 @@ export function SourceViewer({
   );
 }
 
-function SourcePages({ projectId, source }: { projectId: string; source: TutorSource }) {
+function SourcePages({ projectId, source }: { projectId: string; source: ViewableSource }) {
   const [page, setPage] = useState(source.pageStart);
   const { data, isLoading, error, refetch } = useMaterialPage(projectId, source.materialId, page);
   const pdfUrl = `/api/projects/${projectId}/materials/${source.materialId}/file#page=${page}`;

@@ -6,12 +6,28 @@ import { runWithContext } from '../lib/context';
 import { logger } from '../lib/logger';
 import { sleep } from '../lib/semaphore';
 import { WorkerHeartbeat, type IJob } from '../models/job.model';
-import { claimJob, completeJob, enqueueJob, extendLease, failJob, JobError, reportProgress } from './queue';
+import { claimJob, completeJob, enqueueJob, extendLease, failJob, JobError, jobSignals, reportProgress } from './queue';
 import { getJobHandler, registeredJobTypes } from './registry';
 
 const LEASE_MS = 90_000;
 const HEARTBEAT_MS = 10_000;
 const SCHEDULE_MS = 60_000;
+
+/** Idle wait that ends early when a job is enqueued in this process (or the worker stops). */
+function waitForWork(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      jobSignals.off('enqueued', done);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    jobSignals.on('enqueued', done);
+    signal.addEventListener('abort', done, { once: true });
+  });
+}
 
 function classifyJobError(err: unknown): { code: string; message: string; retryable: boolean } {
   if (err instanceof JobError) return { code: err.code, message: err.message, retryable: err.retryable };
@@ -94,7 +110,7 @@ export class Worker {
         logger.warn({ err, slot }, 'Job claim failed');
       }
       if (!job) {
-        await sleep(idle).catch(() => undefined);
+        await waitForWork(idle, this.shutdown.signal);
         idle = Math.min(idle * 1.5, this.opts.pollMs * 5); // back off while the queue is empty
         continue;
       }

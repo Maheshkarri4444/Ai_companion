@@ -23,4 +23,5 @@ Object.assign(process.env, {
   RETRIEVAL_STRONG_SCORE: '0.35',
   RETRIEVAL_MIN_SCORE: '0.2',
   TUTOR_JUDGE_SAMPLE_RATE: '0',
+  QUIZ_JUDGE_SAMPLE_RATE: '0',
 });
