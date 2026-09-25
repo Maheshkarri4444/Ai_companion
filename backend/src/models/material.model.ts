@@ -4,6 +4,8 @@ export const MATERIAL_STATUSES = ['queued', 'processing', 'ready', 'failed'] as 
 export type MaterialStatus = (typeof MATERIAL_STATUSES)[number];
 
 export interface IMaterialProcessing {
+  /** Bumped on every (re)processing request; the job idempotency key includes it. */
+  version: number;
   stage: string | null;
   progress: number;
   attempts: number;
@@ -51,6 +53,7 @@ const materialSchema = new Schema<IMaterial>(
     status: { type: String, enum: MATERIAL_STATUSES, required: true, default: 'queued' },
     // Written by the processing pipeline (Phase 2); initialised on upload.
     processing: {
+      version: { type: Number, default: 1 },
       stage: { type: String, default: null },
       progress: { type: Number, default: 0, min: 0, max: 100 },
       attempts: { type: Number, default: 0 },

@@ -20,6 +20,8 @@ export interface FileDownload {
 export interface StorageProvider {
   save(input: { buffer: Buffer; filename: string; metadata: Record<string, unknown> }): Promise<StoredFile>;
   open(fileId: string): Promise<FileDownload | null>;
+  /** Whole file in memory (processing pipeline); null when missing. */
+  read(fileId: string): Promise<Buffer | null>;
   /** Idempotent: deleting a missing file is not an error. */
   delete(fileId: string): Promise<void>;
   usage(): Promise<{ files: number; totalBytes: number }>;
@@ -45,6 +47,14 @@ class GridFsStorage implements StorageProvider {
     const [file] = await bucket.find({ _id }).limit(1).toArray();
     if (!file) return null;
     return { stream: bucket.openDownloadStream(_id), sizeBytes: file.length };
+  }
+
+  async read(fileId: string) {
+    const file = await this.open(fileId);
+    if (!file) return null;
+    const chunks: Buffer[] = [];
+    for await (const chunk of file.stream) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
   }
 
   async delete(fileId: string) {

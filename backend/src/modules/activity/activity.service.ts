@@ -3,7 +3,7 @@ import { getContext } from '../../lib/context';
 import { isDuplicateKeyError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { toObjectId } from '../../lib/validation';
-import { ActivityEvent, type ActivityType } from '../../models/activityEvent.model';
+import { ActivityEvent, type ActivityType, type IActivityEvent } from '../../models/activityEvent.model';
 import { toActivityDto } from '../serializers';
 
 type Id = string | Types.ObjectId;
@@ -23,13 +23,25 @@ export interface RecordEventInput {
   eventKey?: string;
 }
 
+type Subscriber = (event: IActivityEvent) => Promise<void>;
+const subscribers = new Map<ActivityType, Subscriber[]>();
+
 /**
- * Appends to the activity log. Best-effort by design: a failure to record history must never fail the
- * user's action (the durable workflows added in Phase 2 are repaired by the reconciler instead).
+ * Event → workflow wiring (docs/ARCHITECTURE.md §11): subscribers typically enqueue idempotent jobs, so a
+ * duplicate event can never start duplicate work.
+ */
+export function onActivity(type: ActivityType, subscriber: Subscriber) {
+  subscribers.set(type, [...(subscribers.get(type) ?? []), subscriber]);
+}
+
+/**
+ * Appends to the activity log, then dispatches subscribers. Best-effort by design: a failure to record
+ * history must never fail the user's action — durable workflows are repaired by the reconciler instead.
  */
 export async function recordEvent(input: RecordEventInput): Promise<void> {
+  let event: IActivityEvent;
   try {
-    await ActivityEvent.create({
+    const created = await ActivityEvent.create({
       type: input.type,
       ownerId: toId(input.ownerId),
       actorId: toId(input.actorId ?? getContext()?.userId ?? input.ownerId),
@@ -39,9 +51,14 @@ export async function recordEvent(input: RecordEventInput): Promise<void> {
       metadata: input.metadata ?? {},
       ...(input.eventKey ? { eventKey: input.eventKey } : {}),
     });
+    event = created.toObject();
   } catch (err) {
     if (isDuplicateKeyError(err)) return;
     logger.error({ err, type: input.type }, 'Failed to record activity event');
+    return;
+  }
+  for (const subscriber of subscribers.get(input.type) ?? []) {
+    await subscriber(event).catch((err) => logger.error({ err, type: input.type }, 'Activity subscriber failed'));
   }
 }
 

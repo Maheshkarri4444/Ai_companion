@@ -39,12 +39,25 @@ const EnvSchema = z.object({
   ADMIN_PASSWORD: z.preprocess(blankToUndefined, z.string().min(8).max(72).optional()),
   ADMIN_NAME: z.string().min(2).max(80).default('Platform Admin'),
 
+  AI_PROVIDER: z.enum(['gemini', 'mock']).default('gemini'),
   GEMINI_API_KEY: z.preprocess(blankToUndefined, z.string().optional()),
-  AI_MODEL_PRIMARY: z.string().default('gemini-3.7-flash'),
-  AI_MODEL_FALLBACKS: z.string().default('gemini-3.6-flash,gemini-3.5-flash-lite'),
+  AI_MODEL_PRIMARY: z.string().default('gemini-3.6-flash'),
+  AI_MODEL_FALLBACKS: z.string().default('gemini-3.7-flash,gemini-3-flash-preview,gemini-3.5-flash-lite'),
   AI_MODEL_LIGHT: z.string().default('gemini-3.5-flash-lite'),
+  AI_MODEL_LIGHT_FALLBACKS: z.string().default('gemini-3.1-flash-lite,gemini-3-flash-preview'),
   AI_EMBEDDING_MODEL: z.string().default('gemini-embedding-2'),
   AI_EMBEDDING_DIM: z.coerce.number().int().positive().default(768),
+  AI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
+  AI_TUTOR_REASONING: z.enum(['minimal', 'low', 'medium', 'high']).default('minimal'),
+
+  /** Cosine thresholds (normalised embeddings) for retrieval sufficiency; calibrated by the tutor eval suite. */
+  RETRIEVAL_STRONG_SCORE: z.coerce.number().min(0).max(1).default(0.62),
+  RETRIEVAL_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.5),
+  VECTOR_SEARCH_ENABLED: booleanish.default(true),
+  TUTOR_JUDGE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.3),
+
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+  WORKER_POLL_MS: z.coerce.number().int().min(100).max(60_000).default(1000),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
@@ -57,6 +70,7 @@ export type Config = Env & {
   corsOrigins: string[];
   maxUploadBytes: number;
   aiFallbackModels: string[];
+  aiLightFallbackModels: string[];
 };
 
 function loadConfig(): Config {
@@ -81,6 +95,7 @@ function loadConfig(): Config {
     corsOrigins: splitList(env.CORS_ORIGINS),
     maxUploadBytes: Math.round(env.MAX_UPLOAD_MB * 1024 * 1024),
     aiFallbackModels: splitList(env.AI_MODEL_FALLBACKS),
+    aiLightFallbackModels: splitList(env.AI_MODEL_LIGHT_FALLBACKS),
   };
 }
 

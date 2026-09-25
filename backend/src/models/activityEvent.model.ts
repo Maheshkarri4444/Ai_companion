@@ -13,6 +13,11 @@ export const ACTIVITY_TYPES = [
   'material.uploaded',
   'material.updated',
   'material.deleted',
+  'material.processed',
+  'material.failed',
+  'material.reprocessed',
+  'tutor.answered',
+  'tutor.feedback',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
