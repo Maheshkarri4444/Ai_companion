@@ -15,7 +15,8 @@ export async function connectDatabase(uri: string, dbName: string, attempts = 5)
     } catch (err) {
       if (attempt >= attempts) throw err;
       const delay = 1_000 * 2 ** (attempt - 1);
-      logger.warn({ err, attempt, retryInMs: delay }, 'MongoDB connection failed; retrying');
+      // The driver error embeds the whole topology description; the message is what an operator needs.
+      logger.warn({ err: (err as Error).message, attempt, retryInMs: delay }, 'MongoDB connection failed; retrying');
       await sleep(delay);
     }
   }

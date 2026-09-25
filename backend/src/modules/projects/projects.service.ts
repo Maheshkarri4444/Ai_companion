@@ -8,7 +8,7 @@ import { materialStatusByProject, materialTotals } from '../aggregates';
 import { deleteProjectData } from '../cascade/cascade.service';
 import { emptyStatusCounts, toMaterialDto, toProjectDto, toSpaceSummary } from '../serializers';
 import { getOwnedSpace } from '../spaces/spaces.service';
-import { projectNextStep, touchActivity } from '../workspace';
+import { projectNextStep, touchActivity, tutorStateFor } from '../workspace';
 import type { CreateProjectInput, UpdateProjectInput } from './projects.schemas';
 
 /** Ownership-scoped lookup: another user's Project is indistinguishable from a missing one (404). */
@@ -63,11 +63,12 @@ export async function listRecentProjects(ownerId: string, limit: number) {
 
 export async function getProjectDashboard(ownerId: string, projectId: string) {
   const project = await getOwnedProject(ownerId, projectId);
-  const [space, totals, recentMaterials, recentActivity] = await Promise.all([
+  const [space, totals, recentMaterials, recentActivity, tutor] = await Promise.all([
     Space.findOne({ _id: project.spaceId, ownerId: project.ownerId }, { name: 1, color: 1, icon: 1 }).lean(),
     materialTotals({ ownerId: project.ownerId, projectId: project._id }),
     Material.find({ ownerId: project.ownerId, projectId: project._id }).sort({ createdAt: -1 }).limit(5).lean(),
     listUserActivity(ownerId, { projectId, limit: 10 }),
+    tutorStateFor(project),
   ]);
 
   return {
@@ -81,7 +82,7 @@ export async function getProjectDashboard(ownerId: string, projectId: string) {
     },
     recentMaterials: recentMaterials.map(toMaterialDto),
     recentActivity,
-    nextStep: projectNextStep(project, totals.byStatus),
+    nextStep: projectNextStep(project, totals.byStatus, tutor),
   };
 }
 

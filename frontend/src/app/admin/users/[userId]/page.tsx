@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CalendarDays, Clock, ExternalLink, FileText, FolderKanban, HardDrive, Layers, ListChecks, LogIn, Target, UserX } from "lucide-react";
+import { ArrowRight, Bot, CalendarDays, Clock, ExternalLink, FileText, FolderKanban, HardDrive, Layers, ListChecks, LogIn, Target, UserX } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ActivityFeed } from "@/components/activity-feed";
@@ -48,7 +48,7 @@ export default function AdminUserDetailPage() {
   }
   if (error || !data) return <ErrorState error={error} onRetry={() => refetch()} />;
 
-  const { user, stats, spaces, materials, recentActivity } = data;
+  const { user, stats, spaces, materials, recentActivity, aiUsage } = data;
 
   return (
     <div className="animate-rise space-y-6">
@@ -89,6 +89,55 @@ export default function AdminUserDetailPage() {
         <StatCard label="Storage" value={formatBytes(stats.totalBytes)} icon={<HardDrive />} tone="violet" />
         <StatCard label="Events" value={formatNumber(stats.eventCount)} icon={<ListChecks />} tone="emerald" />
       </section>
+
+      <Card>
+        <CardHeader
+          title="AI usage & tutoring"
+          description="Every AI call made on this learner's behalf, and how Zoya's answers were grounded"
+          icon={<Bot />}
+          action={
+            <Link href={`/admin/ai-usage?userId=${user.id}`} className="text-sm font-medium text-blue-700 hover:text-blue-600">
+              View calls
+            </Link>
+          }
+        />
+        <CardBody>
+          <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4 lg:grid-cols-6">
+            {(
+              [
+                ["AI calls", formatNumber(aiUsage.calls)],
+                ["Tokens", formatNumber(aiUsage.tokens)],
+                ["Estimated cost", `$${aiUsage.costUsd.toFixed(4)}`],
+                ["Tutor answers", formatNumber(aiUsage.tutorAnswers)],
+                ["Conversations", formatNumber(stats.conversationCount)],
+                ["Remembered items", formatNumber(stats.memoryCount)],
+              ] as Array<[string, string]>
+            ).map(([k, v]) => (
+              <div key={k}>
+                <dt className="text-xs text-muted">{k}</dt>
+                <dd className="mt-0.5 text-lg font-semibold text-ink tabular-nums">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs">
+            {Object.entries(aiUsage.grounding).map(([status, count]) => (
+              <Badge key={status} tone={status === "grounded" ? "green" : status === "insufficient" ? "slate" : status === "partial" ? "amber" : "indigo"}>
+                {status}: {count}
+              </Badge>
+            ))}
+            {(aiUsage.feedback.up > 0 || aiUsage.feedback.down > 0) && (
+              <Badge tone="indigo">
+                feedback 👍 {aiUsage.feedback.up} · 👎 {aiUsage.feedback.down}
+              </Badge>
+            )}
+            {aiUsage.byFeature.slice(0, 6).map((f) => (
+              <Badge key={f.feature} tone="slate">
+                {f.feature} · {f.calls}
+              </Badge>
+            ))}
+          </div>
+        </CardBody>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">

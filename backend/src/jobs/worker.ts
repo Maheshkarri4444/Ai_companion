@@ -107,29 +107,57 @@ export class Worker {
   }
 
   private async run(job: IJob) {
-    const handler = getJobHandler(job.type);
     this.stats.running++;
     const leaseTimer = setInterval(() => void extendLease(job._id, this.id, LEASE_MS).catch(() => undefined), LEASE_MS / 3);
-    const log = logger.child({ jobId: job._id.toString(), jobType: job.type, attempt: job.attempts });
-    const started = Date.now();
     try {
-      if (!handler) throw new JobError('NO_HANDLER', `No handler registered for ${job.type}`);
-      const result = await runWithContext({ requestId: job.traceId ?? `job-${job._id.toString()}` }, () =>
-        handler({ job, signal: this.shutdown.signal, progress: (stage, pct) => reportProgress(job._id, stage, pct) }),
-      );
-      await completeJob(job, this.id, result);
-      this.stats.processed++;
-      log.info({ ms: Date.now() - started }, 'Job succeeded');
-    } catch (err) {
-      const failure = classifyJobError(err);
-      const { willRetry } = await failJob(job, this.id, failure).catch(() => ({ willRetry: false }));
-      this.stats.failed++;
-      log.warn({ code: failure.code, willRetry, err: failure.message }, 'Job failed');
+      const ok = await processJob(job, this.id, this.shutdown.signal);
+      if (ok) this.stats.processed++;
+      else this.stats.failed++;
     } finally {
       clearInterval(leaseTimer);
       this.stats.running--;
     }
   }
+}
+
+/** Runs one claimed job through its handler and records the outcome. Returns true on success. */
+export async function processJob(job: IJob, workerId: string, signal: AbortSignal): Promise<boolean> {
+  const handler = getJobHandler(job.type);
+  const log = logger.child({ jobId: job._id.toString(), jobType: job.type, attempt: job.attempts });
+  const started = Date.now();
+  try {
+    if (!handler) throw new JobError('NO_HANDLER', `No handler registered for ${job.type}`);
+    const result = await runWithContext({ requestId: job.traceId ?? `job-${job._id.toString()}` }, () =>
+      handler({ job, signal, progress: (stage, pct) => reportProgress(job._id, stage, pct) }),
+    );
+    await completeJob(job, workerId, result);
+    log.info({ ms: Date.now() - started }, 'Job succeeded');
+    return true;
+  } catch (err) {
+    const failure = classifyJobError(err);
+    const { willRetry } = await failJob(job, workerId, failure).catch(() => ({ willRetry: false }));
+    log.warn({ code: failure.code, willRetry, err: failure.message }, 'Job failed');
+    return false;
+  }
+}
+
+/**
+ * Synchronously processes due jobs until the queue is empty (tests, the evaluation runner and one-off
+ * scripts use it instead of a polling worker).
+ */
+export async function drainJobs(options: { types?: string[]; maxJobs?: number } = {}) {
+  const workerId = `drain:${process.pid}`;
+  const signal = new AbortController().signal;
+  const types = options.types ?? registeredJobTypes();
+  let processed = 0;
+  let failed = 0;
+  while (processed + failed < (options.maxJobs ?? 100)) {
+    const job = await claimJob(workerId, LEASE_MS, types);
+    if (!job) break;
+    if (await processJob(job, workerId, signal)) processed++;
+    else failed++;
+  }
+  return { processed, failed };
 }
 
 let worker: Worker | null = null;

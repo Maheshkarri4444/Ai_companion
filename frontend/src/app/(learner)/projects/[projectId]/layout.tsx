@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 const tabs = [
   { segment: "", label: "Overview", icon: LayoutDashboard },
   { segment: "materials", label: "Materials", icon: FileText },
-  { segment: "tutor", label: "AI Tutor", icon: MessageSquare, soon: true },
+  { segment: "tutor", label: "AI Tutor", icon: MessageSquare },
   { segment: "quiz", label: "Quiz", icon: ListChecks, soon: true },
   { segment: "growth", label: "Growth", icon: TrendingUp, soon: true },
   { segment: "analytics", label: "Analytics", icon: ChartColumn, soon: true },

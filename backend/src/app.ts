@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
+import { registerModules } from './bootstrap';
 import { config } from './config/env';
 import { getContext } from './lib/context';
 import { logger } from './lib/logger';
@@ -18,6 +19,7 @@ import { spacesRouter } from './modules/spaces/spaces.routes';
 
 /** Builds the Express app without listening, so tests can drive it in-process. */
 export function createApp() {
+  registerModules();
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', config.TRUST_PROXY);

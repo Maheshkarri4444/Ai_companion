@@ -1,6 +1,7 @@
 "use client";
 
-import { ExternalLink, FileText, Info, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { ExternalLink, FileText, Info, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -14,7 +15,7 @@ import { Field, Input } from "@/components/ui/field";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { errorMessage } from "@/lib/api";
 import { formatBytes, formatDateTime, pluralize, timeAgo } from "@/lib/format";
-import { useDeleteMaterial, useMaterials, useRenameMaterial } from "@/lib/queries";
+import { useDeleteMaterial, useMaterials, useRenameMaterial, useRetryMaterial } from "@/lib/queries";
 import type { Material } from "@/lib/types";
 
 function RenameDialog({ projectId, material, onClose }: { projectId: string; material?: Material; onClose: () => void }) {
@@ -57,6 +58,33 @@ function RenameForm({ projectId, material, onClose }: { projectId: string; mater
   );
 }
 
+const STAGE_LABELS: Record<string, string> = {
+  extract: "Extracting text",
+  ocr: "Reading scanned pages (OCR)",
+  chunk: "Structuring the content",
+  embed: "Building the search index",
+  concepts: "Identifying key concepts",
+  "waiting-to-retry": "Temporary problem — retrying automatically",
+  queued: "Waiting in the queue",
+};
+
+/** What the background pipeline is doing right now (the list polls while anything is in flight). */
+function ProcessingState({ material }: { material: Material }) {
+  const stage = material.processing.stage ?? (material.status === "queued" ? "queued" : "extract");
+  const pct = material.status === "queued" && stage !== "waiting-to-retry" ? 2 : Math.max(4, material.processing.progress);
+  return (
+    <div className="mt-1.5 max-w-sm">
+      <div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
+        <div className="h-full rounded-full bg-linear-to-r from-blue-500 to-indigo-500 transition-all duration-700" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-1 text-xs text-blue-700">
+        {STAGE_LABELS[stage] ?? stage}
+        {material.status === "processing" ? ` · ${material.processing.progress}%` : ""}
+      </p>
+    </div>
+  );
+}
+
 function fileUrl(material: Material) {
   return `/api/projects/${material.projectId}/materials/${material.id}/file`;
 }
@@ -65,10 +93,21 @@ export default function MaterialsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: materials, isLoading, error, refetch } = useMaterials(projectId);
   const deleteMaterial = useDeleteMaterial(projectId);
+  const retryMaterial = useRetryMaterial(projectId);
   const [renaming, setRenaming] = useState<Material | undefined>();
   const [deleting, setDeleting] = useState<Material | undefined>();
 
   const pending = materials?.filter((m) => m.status === "queued" || m.status === "processing").length ?? 0;
+
+  async function onRetry(material: Material) {
+    try {
+      await retryMaterial.mutateAsync(material.id);
+      toast.success(`Retrying “${material.title}” — completed steps are reused`);
+      void refetch();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  }
 
   async function confirmDelete() {
     if (!deleting) return;
@@ -89,8 +128,9 @@ export default function MaterialsPage() {
         <div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-900">
           <Info className="mt-0.5 size-4 shrink-0 text-blue-600" />
           <p>
-            {pluralize(pending, "material")} {pending === 1 ? "is" : "are"} queued for background processing (text extraction, OCR,
-            concepts and search index). You don&apos;t need to keep this page open.
+            {pluralize(pending, "material")} {pending === 1 ? "is" : "are"} being processed in the background (text extraction, OCR,
+            concepts and search index). You don&apos;t need to keep this page open — Zoya can use {pending === 1 ? "it" : "them"} as soon as{" "}
+            {pending === 1 ? "it's" : "they're"} ready.
           </p>
         </div>
       )}
@@ -141,7 +181,33 @@ export default function MaterialsPage() {
                   <p className="truncate text-xs text-muted">
                     {material.originalFilename} · {formatBytes(material.sizeBytes)}
                     {material.pageCount ? ` · ${pluralize(material.pageCount, "page")}` : ""}
+                    {material.status === "ready" && (
+                      <>
+                        {" "}
+                        · {pluralize(material.stats.conceptCount, "concept")} · {pluralize(material.stats.chunkCount, "passage")}
+                        {material.stats.ocrPageCount > 0 && ` · ${material.stats.ocrPageCount} OCR`}
+                      </>
+                    )}
                   </p>
+                  {(material.status === "queued" || material.status === "processing") && <ProcessingState material={material} />}
+                  {material.status === "ready" && material.summary && (
+                    <p className="mt-1 line-clamp-2 max-w-2xl text-xs leading-relaxed text-ink-soft" title={material.summary}>
+                      {material.summary}
+                    </p>
+                  )}
+                  {material.status === "failed" && material.processing.error && (
+                    <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-red-700">
+                      {material.processing.error.message}
+                      <button
+                        type="button"
+                        onClick={() => onRetry(material)}
+                        disabled={retryMaterial.isPending}
+                        className="inline-flex items-center gap-1 font-medium text-blue-700 hover:underline disabled:opacity-50"
+                      >
+                        <RotateCcw className="size-3" /> Retry processing
+                      </button>
+                    </p>
+                  )}
                 </div>
                 <MaterialStatusBadge status={material.status} error={material.processing.error?.message} />
                 <span className="w-28 text-right text-xs text-muted" title={formatDateTime(material.createdAt)}>
@@ -179,6 +245,15 @@ export default function MaterialsPage() {
           </ul>
         )}
       </Card>
+
+      {materials?.some((m) => m.status === "ready") && (
+        <p className="text-center text-sm text-muted">
+          Ready materials are searchable by Zoya.{" "}
+          <Link href={`/projects/${projectId}/tutor`} className="font-medium text-blue-700 hover:underline">
+            Ask Zoya a question →
+          </Link>
+        </p>
+      )}
 
       <RenameDialog projectId={projectId} material={renaming} onClose={() => setRenaming(undefined)} />
       <ConfirmDialog

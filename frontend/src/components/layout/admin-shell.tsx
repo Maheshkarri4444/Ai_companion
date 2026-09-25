@@ -26,9 +26,9 @@ const sections: NavSection[] = [
     title: "Operations",
     items: [
       { href: "/admin/system", label: "System health", icon: Gauge },
-      { href: "/admin/jobs", label: "Background jobs", icon: Workflow, soon: true },
-      { href: "/admin/ai-usage", label: "AI usage", icon: Cpu, soon: true },
-      { href: "/admin/ai-evaluation", label: "AI evaluation", icon: Bot, soon: true },
+      { href: "/admin/ai-usage", label: "AI usage", icon: Cpu },
+      { href: "/admin/ai-evaluation", label: "AI evaluation", icon: Bot },
+      { href: "/admin/jobs", label: "Background jobs", icon: Workflow },
     ],
   },
 ];

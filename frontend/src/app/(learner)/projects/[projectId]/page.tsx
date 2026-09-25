@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChartColumn, Clock, FileText, HardDrive, ListChecks, Lock, MessageSquare, TrendingUp, Upload, type LucideIcon } from "lucide-react";
+import { Check, ChartColumn, Clock, FileText, HardDrive, Lightbulb, ListChecks, Lock, MessageSquare, TrendingUp, Upload, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ActivityFeed } from "@/components/activity-feed";
@@ -10,21 +10,29 @@ import { buttonClasses } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/feedback";
 import { StatCard } from "@/components/ui/misc";
-import { formatBytes, formatNumber, timeAgo } from "@/lib/format";
-import { useProject } from "@/lib/queries";
+import { ZoyaAvatar } from "@/components/zoya/zoya-avatar";
+import { formatBytes, formatNumber, pluralize, timeAgo } from "@/lib/format";
+import { useConcepts, useProject } from "@/lib/queries";
+import type { Concept } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type StepState = "done" | "current" | "locked";
 
-function LearningPath({ materialCount, pending }: { materialCount: number; pending: number }) {
-  const steps: Array<{ label: string; detail: string; icon: LucideIcon; state: StepState }> = [
+function LearningPath({ materialCount, pending, ready, tutorUsed }: { materialCount: number; pending: number; ready: number; tutorUsed: boolean }) {
+  const steps: Array<{ label: string; detail: string; icon: LucideIcon; state: StepState; lockedHint?: string }> = [
     {
       label: "Materials",
-      detail: materialCount === 0 ? "Upload your PDFs" : pending > 0 ? `${pending} awaiting processing` : `${materialCount} added`,
+      detail: materialCount === 0 ? "Upload your PDFs" : pending > 0 ? `${pending} processing` : `${materialCount} added`,
       icon: FileText,
-      state: materialCount > 0 ? "done" : "current",
+      state: materialCount > 0 && ready > 0 ? "done" : "current",
     },
-    { label: "AI Tutor", detail: "Grounded, cited answers", icon: MessageSquare, state: "locked" },
+    {
+      label: "AI Tutor",
+      detail: tutorUsed ? "Learning with Zoya" : "Ask Zoya — cited answers",
+      icon: MessageSquare,
+      state: tutorUsed ? "done" : ready > 0 ? "current" : "locked",
+      lockedHint: "Needs a processed material",
+    },
     { label: "Quiz", detail: "Adaptive practice", icon: ListChecks, state: "locked" },
     { label: "Growth", detail: "Concept mastery", icon: TrendingUp, state: "locked" },
     { label: "Analytics", detail: "Progress over time", icon: ChartColumn, state: "locked" },
@@ -32,7 +40,7 @@ function LearningPath({ materialCount, pending }: { materialCount: number; pendi
 
   return (
     <ol className="grid gap-3 sm:grid-cols-5">
-      {steps.map(({ label, detail, icon: Icon, state }, i) => (
+      {steps.map(({ label, detail, icon: Icon, state, lockedHint }, i) => (
         <li key={label} className="relative">
           {i < steps.length - 1 && (
             <span
@@ -56,7 +64,7 @@ function LearningPath({ materialCount, pending }: { materialCount: number; pendi
             </span>
             <div className="min-w-0">
               <p className={cn("text-sm font-semibold", state === "locked" ? "text-slate-400" : "text-ink")}>{label}</p>
-              <p className="text-xs text-muted">{state === "locked" ? "Coming soon" : detail}</p>
+              <p className="text-xs text-muted">{state === "locked" ? (lockedHint ?? "Coming soon") : detail}</p>
             </div>
           </div>
         </li>
@@ -65,26 +73,85 @@ function LearningPath({ materialCount, pending }: { materialCount: number; pendi
   );
 }
 
+/** The concept map built by the knowledge pipeline — each concept is one click away from a Tutor question. */
+function KeyConcepts({ projectId, concepts }: { projectId: string; concepts: Concept[] }) {
+  return (
+    <ul className="grid gap-2.5 sm:grid-cols-2">
+      {concepts.slice(0, 8).map((c) => (
+        <li key={c.id} className="rounded-xl border border-line p-3 transition-colors hover:border-blue-200 hover:bg-blue-50/40">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-semibold text-ink">{c.name}</p>
+            <span className="flex shrink-0 gap-0.5 pt-1" title={`Importance ${Math.round(c.importance * 5)}/5`}>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <span key={i} className={cn("h-1.5 w-2.5 rounded-full", i < Math.round(c.importance * 5) ? "bg-blue-500" : "bg-slate-200")} />
+              ))}
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted">{c.description}</p>
+          <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+            <span className="truncate text-muted">
+              {c.sources[0] ? `${c.sources[0].materialTitle} · p. ${c.sources[0].pages.slice(0, 3).join(", ")}` : ""}
+            </span>
+            <Link
+              href={`/projects/${projectId}/tutor?ask=${encodeURIComponent(`Explain ${c.name}`)}`}
+              className="shrink-0 font-medium text-blue-700 hover:underline"
+            >
+              Ask Zoya →
+            </Link>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function ProjectOverviewPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data } = useProject(projectId); // loaded (and error-handled) by the layout
+  const ready = data?.stats.materialsByStatus.ready ?? 0;
+  const concepts = useConcepts(projectId, ready > 0);
   if (!data) return null;
 
   const { project, stats, recentMaterials, recentActivity, nextStep } = data;
   const pending = stats.materialsByStatus.queued + stats.materialsByStatus.processing;
+  const tutorUsed = nextStep.kind === "continue_tutor";
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader title="Learning path" description="Materials → Tutor → Quiz → Growth → Analytics" />
         <CardBody>
-          <LearningPath materialCount={stats.materialCount} pending={pending} />
+          <LearningPath materialCount={stats.materialCount} pending={pending} ready={ready} tutorUsed={tutorUsed} />
         </CardBody>
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <NextStepCard step={nextStep} />
+
+          {ready > 0 && (
+            <Card>
+              <CardHeader
+                title="Key concepts"
+                description={concepts.data ? `${pluralize(concepts.data.length, "concept")} extracted from your materials` : "Extracted from your materials"}
+                icon={<Lightbulb />}
+                action={
+                  <Link href={`/projects/${project.id}/tutor`} className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:text-blue-600">
+                    <ZoyaAvatar size={22} /> Ask Zoya
+                  </Link>
+                }
+              />
+              <CardBody>
+                {concepts.isLoading ? (
+                  <p className="text-sm text-muted">Loading concepts…</p>
+                ) : concepts.data && concepts.data.length > 0 ? (
+                  <KeyConcepts projectId={project.id} concepts={concepts.data} />
+                ) : (
+                  <p className="text-sm text-muted">No concepts were extracted yet.</p>
+                )}
+              </CardBody>
+            </Card>
+          )}
 
           <Card>
             <CardHeader

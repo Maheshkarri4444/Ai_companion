@@ -79,6 +79,25 @@ const STREAM_IDLE_TIMEOUT_MS = 30_000;
 const EMBED_BATCH = 50;
 const QUERY_CACHE_TTL_MS = 10 * 60_000;
 
+/** Rejects as soon as `signal` aborts, even if the provider ignores the signal (a hung SDK call must not hang us). */
+function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
 function linkedController(parent?: AbortSignal) {
   const controller = new AbortController();
   const onAbort = () => controller.abort(parent?.reason);
@@ -136,13 +155,26 @@ export class AIGateway {
     this.breakers.delete(model);
   }
 
+  /**
+   * Quota (429), capacity (503 "high demand") and missing-model errors persist for minutes, so the model is
+   * parked immediately — a 503 can take 10 s to arrive, and nobody should pay that twice. Other failures
+   * (timeouts, unknown) open the breaker after BREAKER_THRESHOLD consecutive errors.
+   */
   private recordFailure(model: string, err: AIError) {
     const breaker = this.breakers.get(model) ?? { failures: 0, openUntil: 0 };
     breaker.failures += 1;
     breaker.lastError = err.kind;
-    if (err.kind === 'rate_limited' || err.kind === 'model_not_found' || breaker.failures >= BREAKER_THRESHOLD) {
-      breaker.openUntil = Date.now() + Math.max(err.retryAfterMs ?? 0, BREAKER_COOLDOWN_MS);
-    }
+    const cooldown =
+      err.kind === 'model_not_found'
+        ? 10 * BREAKER_COOLDOWN_MS
+        : err.kind === 'rate_limited'
+          ? Math.max(err.retryAfterMs ?? 0, BREAKER_COOLDOWN_MS)
+          : err.kind === 'unavailable'
+            ? BREAKER_COOLDOWN_MS / 2
+            : breaker.failures >= BREAKER_THRESHOLD
+              ? BREAKER_COOLDOWN_MS
+              : 0;
+    if (cooldown) breaker.openUntil = Date.now() + cooldown;
     this.breakers.set(model, breaker);
   }
 
@@ -235,7 +267,7 @@ export class AIGateway {
             jsonSchema,
             signal: controller.signal,
           };
-          const result = await this.generationLimiter.run(() => this.provider.generate(model, providerRequest));
+          const result = await this.generationLimiter.run(() => raceAbort(this.provider.generate(model, providerRequest), controller.signal));
           attempts.push({ model, status: 'success', ms: Date.now() - t0 });
           this.recordSuccess(model);
           return { result, model, attempts, started, chainHead: chain[0] };
@@ -375,6 +407,8 @@ export class AIGateway {
             signal: controller.signal,
           };
           for await (const chunk of this.provider.stream(model, providerRequest)) {
+            // Stop promptly on Stop/timeout even if the provider keeps yielding buffered chunks.
+            controller.signal.throwIfAborted();
             if (chunk.type === 'done') {
               attempts.push({ model, status: 'success', ms: Date.now() - t0 });
               this.recordSuccess(model);

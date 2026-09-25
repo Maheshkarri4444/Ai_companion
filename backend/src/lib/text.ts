@@ -25,7 +25,7 @@ export function slugify(value: string): string {
  * or forge the XML-ish delimiters used in prompts.
  */
 export function escapePromptData(value: string): string {
-  return value.replace(/<\/?(source|sources|request|learner_context|conversation_summary|tool_result)\b/gi, (m) =>
+  return value.replace(/<\/?(source|sources|request|learner_context|conversation_summary|tool_result|message|question|answer|material)\b/gi, (m) =>
     m.replace('<', '‹'),
   );
 }

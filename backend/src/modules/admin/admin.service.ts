@@ -9,7 +9,16 @@ import { Material } from '../../models/material.model';
 import { Project } from '../../models/project.model';
 import { Space } from '../../models/space.model';
 import { User } from '../../models/user.model';
+import { ai } from '../../ai';
+import { AiCall } from '../../models/aiCall.model';
+import { Conversation } from '../../models/conversation.model';
+import { Chunk, Concept } from '../../models/knowledge.model';
+import { Job } from '../../models/job.model';
+import { LearningContext } from '../../models/learningContext.model';
 import { storage } from '../../storage/storage';
+import { vectorIndexState } from '../knowledge/vector-index';
+import { aiUsageForUser } from './ai-admin.service';
+import { getWorkerStatus } from './jobs-admin.service';
 import {
   materialCountsBySpace,
   materialStatusByProject,
@@ -37,7 +46,7 @@ const dayKey = { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezo
 
 type UserRef = { id: string; name: string; email: string };
 
-async function userRefs(ids: Types.ObjectId[]): Promise<Map<string, UserRef>> {
+export async function userRefs(ids: Types.ObjectId[]): Promise<Map<string, UserRef>> {
   const unique = [...new Map(ids.filter(Boolean).map((id) => [id.toString(), id])).values()];
   if (unique.length === 0) return new Map();
   const users = await User.find({ _id: { $in: unique } }, { name: 1, email: 1 }).lean();
@@ -195,13 +204,16 @@ export async function getUserDetail(userId: string) {
   if (!user) throw AppError.notFound('User');
   const owner = user._id;
 
-  const [spaces, projects, materials, totals, eventCount, recentEvents] = await Promise.all([
+  const [spaces, projects, materials, totals, eventCount, recentEvents, aiUsage, conversationCount, memoryCount] = await Promise.all([
     Space.find({ ownerId: owner }).sort({ lastActivityAt: -1 }).lean(),
     Project.find({ ownerId: owner }).sort({ lastActivityAt: -1 }).lean(),
     Material.find({ ownerId: owner }).sort({ createdAt: -1 }).limit(100).lean(),
     materialTotals({ ownerId: owner }),
     ActivityEvent.countDocuments({ ownerId: owner }),
     ActivityEvent.find({ ownerId: owner }).sort({ createdAt: -1 }).limit(30).lean(),
+    aiUsageForUser(owner),
+    Conversation.countDocuments({ ownerId: owner }),
+    LearningContext.countDocuments({ ownerId: owner, status: 'active' }),
   ]);
   const statusByProject = await materialStatusByProject(projects.map((p) => p._id));
   const projectName = new Map(projects.map((p) => [p._id.toString(), p.name]));
@@ -215,7 +227,10 @@ export async function getUserDetail(userId: string) {
       totalBytes: totals.totalBytes,
       materialsByStatus: totals.byStatus,
       eventCount,
+      conversationCount,
+      memoryCount,
     },
+    aiUsage,
     spaces: spaces.map((space) => {
       const own = projects.filter((p) => p.spaceId.equals(space._id));
       const projectDtos = own.map((p) => toProjectDto(p, statusByProject.get(p._id.toString()) ?? emptyStatusCounts()));
@@ -374,18 +389,43 @@ export async function openMaterialFileAsAdmin(
 }
 
 export async function getSystemHealth() {
-  const [dbLatencyMs, dbStats, storageUsage] = await Promise.all([
+  const since24h = new Date(Date.now() - 86_400_000);
+  const [dbLatencyMs, dbStats, storageUsage, workerStatus, queued, running, failed24h, oldestQueued, ai24h, chunkCount, conceptCount] = await Promise.all([
     pingDatabase(),
     getDb()
       .command({ dbStats: 1 })
       .catch(() => null),
     storage.usage().catch(() => null),
+    getWorkerStatus().catch(() => ({ alive: 0, workers: [] })),
+    Job.countDocuments({ status: 'queued', runAt: { $lte: new Date() } }).catch(() => null),
+    Job.countDocuments({ status: 'running' }).catch(() => null),
+    Job.countDocuments({ status: 'failed', finishedAt: { $gte: since24h } }).catch(() => null),
+    Job.findOne({ status: 'queued', runAt: { $lte: new Date() } }, { runAt: 1 }).sort({ runAt: 1 }).lean().catch(() => null),
+    AiCall.aggregate<{ calls: number; errors: number; costUsd: number; avgLatencyMs: number }>([
+      { $match: { createdAt: { $gte: since24h } } },
+      {
+        $group: {
+          _id: null,
+          calls: { $sum: 1 },
+          errors: { $sum: { $cond: [{ $eq: ['$status', 'error'] }, 1, 0] } },
+          costUsd: { $sum: '$costUsd' },
+          avgLatencyMs: { $avg: '$latencyMs' },
+        },
+      },
+    ]).catch(() => []),
+    Chunk.estimatedDocumentCount().catch(() => null),
+    Concept.estimatedDocumentCount().catch(() => null),
   ]);
+  const gateway = ai().status();
+  const openBreakers = gateway.breakers.filter((b) => b.open).length;
+  const aiStats = ai24h[0];
+  const oldestQueuedSec = oldestQueued ? Math.round((Date.now() - new Date(oldestQueued.runAt).getTime()) / 1000) : 0;
+  const vector = vectorIndexState();
   const memory = process.memoryUsage();
   const mb = (bytes: number) => Math.round((bytes / 1024 / 1024) * 10) / 10;
 
   return {
-    status: dbLatencyMs === null ? 'degraded' : 'ok',
+    status: dbLatencyMs === null || workerStatus.alive === 0 || openBreakers > 0 ? 'degraded' : 'ok',
     checkedAt: new Date(),
     api: {
       status: 'up',
@@ -413,18 +453,37 @@ export async function getSystemHealth() {
       totalBytes: storageUsage?.totalBytes ?? null,
     },
     ai: {
-      status: config.GEMINI_API_KEY ? 'configured' : 'not_configured',
-      provider: 'gemini',
+      status: config.AI_PROVIDER === 'gemini' && !config.GEMINI_API_KEY ? 'not_configured' : openBreakers ? 'degraded' : 'up',
+      provider: gateway.provider,
       models: {
         primary: config.AI_MODEL_PRIMARY,
         fallbacks: config.aiFallbackModels,
         light: config.AI_MODEL_LIGHT,
+        lightFallbacks: config.aiLightFallbackModels,
         embedding: config.AI_EMBEDDING_MODEL,
+      },
+      inFlight: gateway.inFlight,
+      breakers: gateway.breakers,
+      last24h: {
+        calls: aiStats?.calls ?? 0,
+        errors: aiStats?.errors ?? 0,
+        errorRate: aiStats?.calls ? Math.round((aiStats.errors / aiStats.calls) * 1000) / 1000 : 0,
+        costUsd: Math.round((aiStats?.costUsd ?? 0) * 1e6) / 1e6,
+        avgLatencyMs: aiStats?.avgLatencyMs ? Math.round(aiStats.avgLatencyMs) : null,
       },
     },
     worker: {
-      status: 'not_running',
-      detail: 'The background worker is not enabled in this build yet.',
+      status: workerStatus.alive > 0 ? 'up' : 'down',
+      alive: workerStatus.alive,
+      workers: workerStatus.workers,
+      queue: { queued, running, failed24h, oldestQueuedSec },
+    },
+    retrieval: {
+      status: vector.status === 'ready' ? 'up' : vector.status === 'building' || vector.status === 'unknown' ? 'degraded' : 'fallback',
+      vectorIndex: vector,
+      mode: vector.status === 'ready' ? 'Atlas Vector Search + lexical (hybrid)' : 'In-process cosine + lexical (fallback)',
+      chunks: chunkCount,
+      concepts: conceptCount,
     },
   };
 }

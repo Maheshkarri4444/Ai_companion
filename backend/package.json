@@ -2,7 +2,7 @@
   "name": "ai-study-companion-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Study Companion — Express API and background worker",
+  "description": "AI Study Companion \u2014 Express API and background worker",
   "type": "module",
   "engines": {
     "node": ">=22.9"
@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed:admin": "tsx --env-file-if-exists=.env src/scripts/seed-admin.ts"
+    "seed:admin": "tsx --env-file-if-exists=.env src/scripts/seed-admin.ts",
+    "eval:tutor": "tsx --env-file-if-exists=.env evals/tutor/run.ts"
   },
   "dependencies": {
     "@google/genai": "^2.24.0",

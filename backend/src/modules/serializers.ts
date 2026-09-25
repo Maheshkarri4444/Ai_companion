@@ -81,9 +81,21 @@ export function toMaterialDto(material: IMaterial) {
       stage: material.processing?.stage ?? null,
       progress: material.processing?.progress ?? 0,
       attempts: material.processing?.attempts ?? 0,
+      startedAt: material.processing?.startedAt ?? null,
+      finishedAt: material.processing?.finishedAt ?? null,
       error: material.processing?.error
-        ? { code: material.processing.error.code, message: material.processing.error.message }
+        ? {
+            code: material.processing.error.code,
+            message: material.processing.error.message,
+            retryable: Boolean(material.processing.error.retryable),
+          }
         : null,
+    },
+    summary: material.summary ?? null,
+    stats: {
+      chunkCount: material.stats?.chunkCount ?? 0,
+      conceptCount: material.stats?.conceptCount ?? 0,
+      ocrPageCount: material.stats?.ocrPageCount ?? 0,
     },
     createdAt: material.createdAt,
     updatedAt: material.updatedAt,

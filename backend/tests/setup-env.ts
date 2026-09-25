@@ -12,4 +12,15 @@ Object.assign(process.env, {
   ADMIN_EMAIL: '',
   ADMIN_PASSWORD: '',
   GEMINI_API_KEY: '',
+  // AI runs against the scriptable mock provider; bag-of-words mock embeddings need lower thresholds.
+  AI_PROVIDER: 'mock',
+  AI_MODEL_PRIMARY: 'mock-primary',
+  AI_MODEL_FALLBACKS: 'mock-fallback',
+  AI_MODEL_LIGHT: 'mock-light',
+  AI_MODEL_LIGHT_FALLBACKS: '',
+  AI_EMBEDDING_MODEL: 'mock-embedding',
+  VECTOR_SEARCH_ENABLED: 'false',
+  RETRIEVAL_STRONG_SCORE: '0.35',
+  RETRIEVAL_MIN_SCORE: '0.2',
+  TUTOR_JUDGE_SAMPLE_RATE: '0',
 });

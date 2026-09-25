@@ -1,4 +1,4 @@
-import { ArrowRight, Clock, FileUp, FolderPlus, Layers, PlayCircle, RotateCcw } from "lucide-react";
+import { ArrowRight, Clock, FileUp, FolderPlus, Layers, MessageSquareText, PlayCircle, RotateCcw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { NextStep } from "@/lib/types";
@@ -38,7 +38,7 @@ export function describeNextStep(step: NextStep): StepView {
       return {
         icon: <Clock />,
         title: `${step.pendingCount} ${step.pendingCount === 1 ? "material is" : "materials are"} queued for processing`,
-        body: "Processing runs in the background — you don't need to keep this page open. The Tutor and quizzes unlock once material is ready.",
+        body: "Processing runs in the background — you don't need to keep this page open. Zoya can answer from it as soon as it's ready.",
         cta: { label: "View materials", href: `/projects/${step.projectId}/materials` },
       };
     case "retry_failed":
@@ -47,6 +47,22 @@ export function describeNextStep(step: NextStep): StepView {
         title: `Processing failed for ${step.failedCount} ${step.failedCount === 1 ? "material" : "materials"}`,
         body: "Check the error on the materials page and upload a readable PDF.",
         cta: { label: "Review materials", href: `/projects/${step.projectId}/materials` },
+      };
+    case "ask_tutor":
+      return {
+        icon: <Sparkles />,
+        title: `Ask Zoya about ${step.projectName}`,
+        body: step.concept
+          ? `Your material is ready. Start with a question — for example, “What is ${step.concept}?” — and Zoya will answer from your notes with page citations.`
+          : "Your material is ready. Ask Zoya a question and she'll answer from your notes with page citations.",
+        cta: { label: "Ask Zoya", href: `/projects/${step.projectId}/tutor` },
+      };
+    case "continue_tutor":
+      return {
+        icon: <MessageSquareText />,
+        title: `Continue with Zoya: ${step.conversationTitle}`,
+        body: "Pick up your last conversation — Zoya remembers where you left off and what you found tricky.",
+        cta: { label: "Continue conversation", href: `/projects/${step.projectId}/tutor?c=${step.conversationId}` },
       };
     case "continue_project":
       return {

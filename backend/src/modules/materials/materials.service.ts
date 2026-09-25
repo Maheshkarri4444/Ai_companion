@@ -7,6 +7,7 @@ import { Material } from '../../models/material.model';
 import { storage } from '../../storage/storage';
 import { recordEvent } from '../activity/activity.service';
 import { deleteBlobs } from '../cascade/cascade.service';
+import { deleteMaterialKnowledge } from '../knowledge/knowledge.service';
 import { getOwnedProject } from '../projects/projects.service';
 import { toMaterialDto } from '../serializers';
 import { touchActivity } from '../workspace';
@@ -93,7 +94,7 @@ export async function uploadMaterial(ownerId: string, projectId: string, file: U
     materialId: material._id,
     metadata: { materialTitle: material.title, projectName: project.name, sizeBytes: material.sizeBytes },
   });
-  // Phase 2: the `material.uploaded` subscription enqueues the `material.process` job here.
+  // The `material.uploaded` subscription (modules/workflows.ts) enqueued the `material.process` job.
   return toMaterialDto(material.toObject());
 }
 
@@ -119,7 +120,7 @@ export async function renameMaterial(ownerId: string, projectId: string, materia
 export async function deleteMaterial(ownerId: string, projectId: string, materialId: string) {
   const { project, material } = await getOwnedMaterial(ownerId, projectId, materialId);
   await Material.deleteOne({ _id: material._id, ownerId: project.ownerId });
-  // Phase 2+: derived pages/chunks/concept links for this material are removed here as well.
+  await deleteMaterialKnowledge(material); // pages, chunks, concept links; pending jobs cancelled
   await deleteBlobs([material.storage.fileId.toString()]);
   await touchActivity({ spaceId: project.spaceId, projectId: project._id });
   await recordEvent({

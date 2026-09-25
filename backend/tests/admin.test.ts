@@ -1,3 +1,4 @@
+import { WorkerHeartbeat } from '../src/models/job.model';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AuditLog } from '../src/models/auditLog.model';
 import {
@@ -113,9 +114,13 @@ describe('admin console API', () => {
     expect(audit?.ownerId?.toString()).toBe(alice.id);
   });
 
-  it('reports system health', async () => {
-    const res = await admin.get('/api/admin/system/health');
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ status: 'ok', database: { status: 'up' }, storage: { files: 1 } });
+  it('reports system health, degraded while no background worker is alive', async () => {
+    const down = await admin.get('/api/admin/system/health');
+    expect(down.status).toBe(200);
+    expect(down.body).toMatchObject({ status: 'degraded', database: { status: 'up' }, storage: { files: 1 }, worker: { status: 'down' } });
+
+    await WorkerHeartbeat.create({ _id: 'test-worker', host: 'test', pid: 1, role: 'worker', version: 'test', startedAt: new Date(), lastBeatAt: new Date(), concurrency: 2, running: 0, processed: 0, failed: 0 });
+    const up = await admin.get('/api/admin/system/health');
+    expect(up.body).toMatchObject({ status: 'ok', worker: { status: 'up', alive: 1 } });
   });
 });

@@ -50,9 +50,14 @@ const EnvSchema = z.object({
   AI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
   AI_TUTOR_REASONING: z.enum(['minimal', 'low', 'medium', 'high']).default('minimal'),
 
-  /** Cosine thresholds (normalised embeddings) for retrieval sufficiency; calibrated by the tutor eval suite. */
-  RETRIEVAL_STRONG_SCORE: z.coerce.number().min(0).max(1).default(0.62),
-  RETRIEVAL_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.5),
+  /**
+   * Cosine thresholds for retrieval sufficiency, calibrated for gemini-embedding-2 with the tutor eval suite
+   * (2026-09-25): answerable questions scored 0.77–0.85, partially covered 0.70, adjacent-but-uncovered topics
+   * 0.63, off-topic 0.53–0.56. Below MIN no model is asked to answer; between MIN and STRONG the model
+   * decides and must self-report PARTIAL/INSUFFICIENT.
+   */
+  RETRIEVAL_STRONG_SCORE: z.coerce.number().min(0).max(1).default(0.72),
+  RETRIEVAL_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.58),
   VECTOR_SEARCH_ENABLED: booleanish.default(true),
   TUTOR_JUDGE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.3),
 

@@ -1,9 +1,14 @@
 import type { Types } from 'mongoose';
 import { logger } from '../../lib/logger';
+import { AiCall } from '../../models/aiCall.model';
+import { AiEvaluation } from '../../models/aiEvaluation.model';
 import { Material } from '../../models/material.model';
 import { Project } from '../../models/project.model';
 import { Space } from '../../models/space.model';
 import { storage } from '../../storage/storage';
+import { deleteProjectKnowledge } from '../knowledge/knowledge.service';
+import { deleteProjectLearningContext } from '../learning-context/learning-context.service';
+import { deleteProjectTutorData } from '../tutor/tutor.service';
 
 /**
  * The single place that knows everything a Project owns. Every phase that adds a project-scoped
@@ -16,9 +21,13 @@ export async function deleteProjectData(project: { _id: Types.ObjectId; ownerId:
   const materials = await Material.find({ projectId: project._id, ownerId: project.ownerId }, { storage: 1 }).lean();
 
   await Material.deleteMany({ projectId: project._id, ownerId: project.ownerId });
-  // Phase 2+: material_pages, chunks, concepts, jobs (cancel queued)
-  // Phase 3+: conversations, messages · Phase 4+: quiz_sessions, questions, attempts, mastery, mastery_snapshots
-  // Phase 5+: recommendations, learning_context
+  await deleteProjectKnowledge(project.ownerId, project._id); // pages, chunks, concepts; queued jobs cancelled
+  await deleteProjectTutorData(project.ownerId, project._id); // conversations, messages
+  await deleteProjectLearningContext(project.ownerId, project._id);
+  await AiEvaluation.deleteMany({ ownerId: project.ownerId, projectId: project._id });
+  // AI usage records stay for cost accounting, but the learner's text is scrubbed from them.
+  await AiCall.updateMany({ projectId: project._id }, { $set: { inputPreview: null, outputPreview: null, metadata: {} } });
+  // Later phases: quiz_sessions, questions, attempts, mastery, mastery_snapshots, recommendations
   await Project.deleteOne({ _id: project._id, ownerId: project.ownerId });
 
   await deleteBlobs(materials.map((m) => m.storage.fileId.toString()));

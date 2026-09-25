@@ -7,18 +7,18 @@ import { escapePromptData, slugify } from '../../lib/text';
 import { dot } from '../../lib/vector';
 import { Chunk, Concept, type IConcept } from '../../models/knowledge.model';
 
+// Semantic rules are validated (repair round on failure); pure size limits are applied by truncation below,
+// so an over-long but otherwise good answer never costs a second model call.
 const Extraction = z.object({
-  summary: z.string().max(2000),
-  concepts: z
-    .array(
-      z.object({
-        name: z.string().min(2).max(120),
-        description: z.string().max(800),
-        importance: z.number().int().min(1).max(5),
-        pages: z.array(z.number().int()).max(80),
-      }),
-    )
-    .max(40),
+  summary: z.string(),
+  concepts: z.array(
+    z.object({
+      name: z.string().min(2),
+      description: z.string(),
+      importance: z.number().int().min(1).max(5),
+      pages: z.array(z.number().int()),
+    }),
+  ),
 });
 
 export interface ExtractedConcept {
@@ -93,8 +93,9 @@ export async function extractConcepts(input: {
       timeoutMs: 120_000,
       inputPreview: `Concepts for "${input.title}" (part ${i + 1}/${selected.length})`,
     });
-    if (data.summary.trim()) summaries.push(data.summary.trim());
-    for (const concept of data.concepts) {
+    if (data.summary.trim()) summaries.push(data.summary.trim().slice(0, 2000));
+    for (const raw of data.concepts.slice(0, 40)) {
+      const concept = { ...raw, name: raw.name.trim().slice(0, 120), description: raw.description.trim().slice(0, 600), pages: raw.pages.slice(0, 80) };
       const slug = slugify(concept.name);
       if (!slug) continue;
       const pages = [...new Set(concept.pages.filter((p) => p >= 1 && p <= input.pageCount))].sort((a, b) => a - b);

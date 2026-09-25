@@ -1,7 +1,13 @@
 import {
+  AlertTriangle,
+  FileCheck2,
   FilePlus2,
   FileMinus2,
   FilePen,
+  MessageSquareQuote,
+  RefreshCw,
+  ThumbsDown,
+  ThumbsUp,
   FolderPlus,
   FolderPen,
   FolderMinus,
@@ -69,6 +75,44 @@ export function describeActivity(event: Pick<ActivityEvent, "type" | "metadata">
       return { Icon: FilePen, tone: "bg-slate-100 text-slate-600", text: <>Renamed material to {q(m.materialTitle)}</> };
     case "material.deleted":
       return { Icon: FileMinus2, tone: "bg-red-50 text-red-500", text: <>Removed {q(m.materialTitle)} from {q(m.projectName)}</> };
+    case "material.processed":
+      return {
+        Icon: FileCheck2,
+        tone: "bg-emerald-50 text-emerald-600",
+        text: (
+          <>
+            {q(m.materialTitle)} is ready
+            {typeof m.conceptCount === "number" && (
+              <span className="text-muted">
+                {" "}
+                · {m.pageCount as number} pages · {m.conceptCount} concepts
+              </span>
+            )}
+          </>
+        ),
+      };
+    case "material.failed":
+      return { Icon: AlertTriangle, tone: "bg-red-50 text-red-500", text: <>Processing failed for {q(m.materialTitle)}</> };
+    case "material.reprocessed":
+      return { Icon: RefreshCw, tone: "bg-amber-50 text-amber-600", text: <>Retried processing {q(m.materialTitle)}</> };
+    case "tutor.answered":
+      return {
+        Icon: MessageSquareQuote,
+        tone: "bg-violet-50 text-violet-600",
+        text: (
+          <>
+            Asked Zoya <span className="text-ink">“{str(m.question) || "a question"}”</span>
+            {m.grounding === "grounded" && <span className="text-muted"> · answered from materials</span>}
+            {m.grounding === "insufficient" && <span className="text-muted"> · not in materials</span>}
+          </>
+        ),
+      };
+    case "tutor.feedback":
+      return {
+        Icon: m.rating === "down" ? ThumbsDown : ThumbsUp,
+        tone: m.rating === "down" ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600",
+        text: <>Rated an answer from Zoya {m.rating === "down" ? "as unhelpful" : "as helpful"}</>,
+      };
     default:
       return { Icon: Layers, tone: "bg-slate-100 text-slate-500", text: <>{(event.type as string).replace(/[._]/g, " ")}</> };
   }
@@ -86,11 +130,20 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   "material.uploaded": "Material uploaded",
   "material.updated": "Material renamed",
   "material.deleted": "Material deleted",
+  "material.processed": "Material processed",
+  "material.failed": "Material failed",
+  "material.reprocessed": "Material retried",
+  "tutor.answered": "Tutor question",
+  "tutor.feedback": "Tutor feedback",
 };
 
 function eventHref(event: ActivityEvent): string | undefined {
   if (event.type.endsWith(".deleted")) return undefined;
   if (event.type.startsWith("material.") && event.projectId) return `/projects/${event.projectId}/materials`;
+  if (event.type.startsWith("tutor.") && event.projectId) {
+    const conversationId = str(event.metadata?.conversationId);
+    return `/projects/${event.projectId}/tutor${conversationId ? `?c=${conversationId}` : ""}`;
+  }
   if (event.projectId) return `/projects/${event.projectId}`;
   if (event.spaceId) return `/spaces/${event.spaceId}`;
   return undefined;

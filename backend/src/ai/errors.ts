@@ -48,7 +48,11 @@ function parseRetryAfter(message: string): number | undefined {
 /** Normalises SDK, network and abort errors into a small, actionable vocabulary. */
 export function classifyAIError(err: unknown, model?: string, signal?: AbortSignal): AIError {
   if (err instanceof AIError) return err;
-  if (signal?.aborted && signal.reason instanceof AIError) return signal.reason;
+  if (signal?.aborted) {
+    // Timeouts abort with an AIError reason; anything else (Stop, client disconnect, shutdown) is a cancellation.
+    if (signal.reason instanceof AIError) return signal.reason;
+    return new AIError('aborted', 'The request was cancelled.', { model, cause: err });
+  }
 
   const e = err as { name?: string; status?: number; message?: string; code?: string; cause?: { code?: string } };
   const message = e?.message ?? String(err);

@@ -5,12 +5,27 @@ import { streamPdf } from '../materials/pdf';
 import {
   activityQuery,
   adminMaterialParams,
+  aiCallsQuery,
+  evaluationsQuery,
+  idParams,
+  jobsQuery,
   materialsQuery,
   projectsQuery,
+  rangeQuery,
   spacesQuery,
   userParams,
   usersQuery,
 } from './admin.schemas';
+import {
+  getAiCall,
+  getAiConfiguration,
+  getAiOverview,
+  getEvalRun,
+  getEvaluationOverview,
+  listAiCalls,
+  listEvaluations,
+} from './ai-admin.service';
+import { getJob, getJobsOverview, listJobs, retryJobAsAdmin } from './jobs-admin.service';
 import {
   getOverview,
   getSystemHealth,
@@ -51,3 +66,25 @@ adminRouter.get('/activity', handler({ query: activityQuery }, ({ query }) => li
 adminRouter.get('/activity/types', handler({}, () => ({ items: listActivityTypes() })));
 
 adminRouter.get('/system/health', handler({}, () => getSystemHealth()));
+
+// AI usage & tracing (PRD §14: model, feature, latency, tokens, cost, failures, retrieval)
+adminRouter.get('/ai/overview', handler({ query: rangeQuery }, ({ query }) => getAiOverview(query)));
+adminRouter.get('/ai/config', handler({}, () => getAiConfiguration()));
+adminRouter.get('/ai/calls', handler({ query: aiCallsQuery }, ({ query }) => listAiCalls(query)));
+adminRouter.get('/ai/calls/:callId', handler({ params: idParams('callId') }, ({ params }) => getAiCall(params.callId as string)));
+
+// AI quality: rules, LLM judge, learner feedback, offline regression runs
+adminRouter.get('/ai/evaluations/overview', handler({ query: rangeQuery }, ({ query }) => getEvaluationOverview(query)));
+adminRouter.get('/ai/evaluations', handler({ query: evaluationsQuery }, ({ query }) => listEvaluations(query)));
+adminRouter.get('/ai/eval-runs/:runId', handler({ params: idParams('runId') }, ({ params }) => getEvalRun(params.runId as string)));
+
+// Background processing
+adminRouter.get('/jobs/overview', handler({}, () => getJobsOverview()));
+adminRouter.get('/jobs', handler({ query: jobsQuery }, ({ query }) => listJobs(query)));
+adminRouter.get('/jobs/:jobId', handler({ params: idParams('jobId') }, ({ params }) => getJob(params.jobId as string)));
+adminRouter.post(
+  '/jobs/:jobId/retry',
+  handler({ params: idParams('jobId') }, async ({ auth, params, req }) => ({
+    job: await retryJobAsAdmin(auth.userId, params.jobId as string, { ip: req.ip, userAgent: req.get('user-agent') }),
+  })),
+);

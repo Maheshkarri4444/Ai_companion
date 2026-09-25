@@ -3,19 +3,29 @@
  * to its own wire format (docs/ARCHITECTURE.md §12).
  */
 
-export type AIFeature =
-  | 'tutor.answer'
-  | 'tutor.intent'
-  | 'tutor.summarize'
-  | 'tutor.memory'
-  | 'tutor.judge'
-  | 'material.ocr'
-  | 'material.concepts'
-  | 'embed.document'
-  | 'embed.query'
-  | 'embed.memory'
-  | 'eval.judge'
-  | 'system.probe';
+/**
+ * Every AI call is tagged with the product feature it serves (cost, latency and quality are reported per
+ * feature). The catalogue already covers the assessment and recommendation phases so they only add prompts.
+ */
+export const AI_FEATURES = [
+  'tutor.answer',
+  'tutor.intent',
+  'tutor.summarize',
+  'tutor.title',
+  'tutor.memory',
+  'material.ocr',
+  'material.concepts',
+  'embed.document',
+  'embed.query',
+  'embed.memory',
+  'quiz.generate',
+  'quiz.grade',
+  'insight.generate',
+  'recommend.generate',
+  'eval.judge',
+  'system.probe',
+] as const;
+export type AIFeature = (typeof AI_FEATURES)[number];
 
 export type ModelTier = 'primary' | 'light';
 export type Reasoning = 'minimal' | 'low' | 'medium' | 'high';

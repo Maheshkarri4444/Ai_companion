@@ -89,3 +89,143 @@
     scrollbar-color: rgb(148 163 184 / 0.35) transparent;
   }
 }
+
+/* ── Zoya, the AI tutor: avatar animation (pure CSS, idle cost ≈ 0) ─────────── */
+.zoya svg * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.zoya .zoya-eyes {
+  animation: zoya-blink 5.2s infinite;
+}
+.zoya .zoya-talk {
+  opacity: 0;
+}
+.zoya .zoya-pupils {
+  transition: transform 0.35s ease;
+}
+.zoya--idle .zoya-sparkle {
+  animation: zoya-twinkle 4.5s ease-in-out infinite;
+}
+.zoya--thinking .zoya-pupils {
+  transform: translate(1.2px, -2.4px);
+}
+.zoya--thinking .zoya-brows {
+  transform: translateY(-1.5px);
+}
+.zoya--thinking .zoya-sparkle {
+  animation: zoya-twinkle 1.1s ease-in-out infinite;
+}
+.zoya--thinking .zoya-sparkle-2 {
+  animation-delay: 0.35s;
+}
+.zoya--thinking .zoya-mic,
+.zoya--speaking .zoya-mic {
+  animation: zoya-mic 0.9s ease-in-out infinite;
+}
+.zoya--speaking .zoya-smile {
+  opacity: 0;
+}
+.zoya--speaking .zoya-talk {
+  opacity: 1;
+  animation: zoya-talk 0.3s ease-in-out infinite alternate;
+}
+@keyframes zoya-blink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  95.5% { transform: scaleY(0.1); }
+}
+@keyframes zoya-talk {
+  from { transform: scaleY(0.3); }
+  to { transform: scaleY(1); }
+}
+@keyframes zoya-twinkle {
+  0%, 100% { opacity: 0.95; transform: scale(1) rotate(0deg); }
+  50% { opacity: 0.35; transform: scale(0.6) rotate(25deg); }
+}
+@keyframes zoya-mic {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.stream-caret::after,
+.zoya-prose.is-streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  border-radius: 2px;
+  background: var(--color-blue-500);
+  animation: caret-blink 1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .zoya *,
+  .stream-caret::after,
+.zoya-prose.is-streaming > :last-child::after {
+    animation: none !important;
+  }
+}
+
+/* ── Tutor answers: readable Markdown + math ─────────────────────────────── */
+.zoya-prose {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--color-ink-soft);
+  overflow-wrap: anywhere;
+}
+.zoya-prose > :first-child { margin-top: 0; }
+.zoya-prose > :last-child { margin-bottom: 0; }
+.zoya-prose p { margin: 0.6em 0; }
+.zoya-prose strong { color: var(--color-ink); font-weight: 600; }
+.zoya-prose h1, .zoya-prose h2, .zoya-prose h3, .zoya-prose h4 {
+  font-family: var(--font-display);
+  color: var(--color-ink);
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 1.1em 0 0.4em;
+}
+.zoya-prose h1 { font-size: 1.15rem; }
+.zoya-prose h2 { font-size: 1.07rem; }
+.zoya-prose h3, .zoya-prose h4 { font-size: 1rem; }
+.zoya-prose ul, .zoya-prose ol { margin: 0.5em 0; padding-left: 1.35em; }
+.zoya-prose ul { list-style: disc; }
+.zoya-prose ol { list-style: decimal; }
+.zoya-prose li { margin: 0.25em 0; }
+.zoya-prose li::marker { color: var(--color-blue-500); }
+.zoya-prose a { color: var(--color-blue-700); text-decoration: underline; text-underline-offset: 2px; }
+.zoya-prose blockquote {
+  margin: 0.7em 0;
+  border-left: 3px solid var(--color-blue-200);
+  background: rgb(239 246 255 / 0.6);
+  padding: 0.5em 0.9em;
+  border-radius: 0 0.6rem 0.6rem 0;
+  color: var(--color-ink-soft);
+}
+.zoya-prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: #eef2f9;
+  color: #1e3a8a;
+  padding: 0.12em 0.35em;
+  border-radius: 0.35rem;
+}
+.zoya-prose pre {
+  margin: 0.8em 0;
+  background: var(--color-navy-900);
+  color: #dbeafe;
+  padding: 0.85em 1em;
+  border-radius: 0.8rem;
+  overflow-x: auto;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.zoya-prose pre code { background: transparent; color: inherit; padding: 0; }
+.zoya-prose table { width: 100%; border-collapse: collapse; margin: 0.8em 0; font-size: 0.85rem; display: block; overflow-x: auto; }
+.zoya-prose th, .zoya-prose td { border: 1px solid var(--color-line); padding: 0.4em 0.65em; text-align: left; }
+.zoya-prose th { background: #f1f5fb; color: var(--color-ink); font-weight: 600; }
+.zoya-prose hr { border-color: var(--color-line); margin: 1em 0; }
+.zoya-prose .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.2em 0; }

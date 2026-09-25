@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertTriangle, Bot, CheckCircle2, CircleDashed, Database, HardDrive, RefreshCw, Server, Workflow, XCircle } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, CircleDashed, Database, HardDrive, RefreshCw, Search, Server, Workflow, XCircle } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ErrorState, Skeleton } from "@/components/ui/feedback";
 import { PageHeader } from "@/components/ui/misc";
-import { formatBytes, formatDateTime, formatDuration, formatNumber } from "@/lib/format";
+import { formatBytes, formatDateTime, formatDuration, formatNumber, timeAgo } from "@/lib/format";
 import { useSystemHealth } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +83,7 @@ export default function SystemHealthPage() {
     <div className="animate-rise">
       <PageHeader
         title="System health"
-        description="Live status of the platform's components. Refreshes every 30 seconds."
+        description="Live status of the platform's components. Refreshes every 15 seconds."
         actions={
           <Button variant="secondary" size="sm" onClick={() => refetch()} loading={isFetching}>
             {!isFetching && <RefreshCw className="size-3.5" />} Check now
@@ -142,25 +143,76 @@ export default function SystemHealthPage() {
         />
         <ComponentCard
           icon={<Bot />}
-          title="AI provider"
-          tone={data.ai.status === "configured" ? "ok" : "warn"}
-          statusLabel={data.ai.status === "configured" ? "Configured" : "Not configured"}
+          title="AI gateway"
+          tone={data.ai.status === "up" ? "ok" : data.ai.status === "degraded" ? "warn" : "down"}
+          statusLabel={data.ai.status === "up" ? "Operational" : data.ai.status === "degraded" ? "Model breaker open" : "Not configured"}
           rows={[
-            ["Provider", "Google Gemini"],
-            ["Primary model", data.ai.models.primary],
-            ["Fallback models", data.ai.models.fallbacks.join(", ") || "—"],
-            ["Light model", data.ai.models.light],
-            ["Embedding model", data.ai.models.embedding],
+            ["Provider", data.ai.provider === "gemini" ? "Google Gemini" : data.ai.provider],
+            ["Primary chain", [data.ai.models.primary, ...data.ai.models.fallbacks].join(" → ")],
+            ["Light chain", [data.ai.models.light, ...data.ai.models.lightFallbacks].join(" → ")],
+            ["Embeddings", data.ai.models.embedding],
+            ["Calls (24 h)", `${formatNumber(data.ai.last24h.calls)} · ${Math.round(data.ai.last24h.errorRate * 1000) / 10}% errors`],
+            ["Cost (24 h)", `$${data.ai.last24h.costUsd.toFixed(4)}`],
+            ["Avg latency (24 h)", data.ai.last24h.avgLatencyMs != null ? `${formatNumber(data.ai.last24h.avgLatencyMs)} ms` : "—"],
+            [
+              "Circuit breakers",
+              data.ai.breakers.filter((b) => b.open).length
+                ? data.ai.breakers
+                    .filter((b) => b.open)
+                    .map((b) => `${b.model} (${b.lastError}, ${b.reopensInSec}s)`)
+                    .join(", ")
+                : "All closed",
+            ],
           ]}
-          note="Live AI call metrics (latency, tokens, cost, errors) appear in AI usage once the Tutor is enabled."
+          note="Every call is logged with model, latency, tokens and cost — see AI usage for traces."
         />
         <ComponentCard
           icon={<Workflow />}
           title="Background worker"
-          tone="idle"
-          rows={[["Status", "Not running"]]}
-          note={data.worker.detail}
+          tone={data.worker.status === "up" ? "ok" : "down"}
+          statusLabel={data.worker.status === "up" ? `${data.worker.alive} alive` : "No live worker"}
+          rows={[
+            ["Queued (due now)", formatNumber(data.worker.queue.queued)],
+            ["Running", formatNumber(data.worker.queue.running)],
+            ["Failed (24 h)", formatNumber(data.worker.queue.failed24h)],
+            ["Oldest waiting job", data.worker.queue.oldestQueuedSec ? formatDuration(data.worker.queue.oldestQueuedSec) : "—"],
+            ...data.worker.workers.slice(0, 3).map(
+              (w) =>
+                [
+                  `${w.host}:${w.pid}`,
+                  <span key={w.id} className={w.alive ? "text-emerald-700" : "text-slate-400"}>
+                    {w.alive ? `beat ${timeAgo(w.lastBeatAt)}` : "stopped"} · {w.processed} done / {w.failed} failed
+                  </span>,
+                ] as [string, ReactNode],
+            ),
+          ]}
+          note="Durable MongoDB queue with leases, retries with backoff, dead-lettering and a per-minute reconciler."
         />
+        <ComponentCard
+          icon={<Search />}
+          title="Retrieval"
+          tone={data.retrieval.status === "up" ? "ok" : "warn"}
+          statusLabel={data.retrieval.status === "up" ? "Vector index ready" : data.retrieval.status === "degraded" ? "Index building" : "Fallback mode"}
+          rows={[
+            ["Mode", data.retrieval.mode],
+            ["Vector index", data.retrieval.vectorIndex.status],
+            ["Indexed chunks", formatNumber(data.retrieval.chunks)],
+            ["Concepts", formatNumber(data.retrieval.concepts)],
+          ]}
+          note={data.retrieval.vectorIndex.detail ? `Index detail: ${data.retrieval.vectorIndex.detail}` : undefined}
+        />
+        <Card className="flex flex-col justify-center gap-2 p-5 text-sm text-muted">
+          <p className="font-medium text-ink">Investigate further</p>
+          <Link href="/admin/ai-usage" className="text-blue-700 hover:underline">
+            AI usage & traces →
+          </Link>
+          <Link href="/admin/ai-evaluation" className="text-blue-700 hover:underline">
+            AI evaluation →
+          </Link>
+          <Link href="/admin/jobs" className="text-blue-700 hover:underline">
+            Background jobs →
+          </Link>
+        </Card>
       </div>
     </div>
   );

@@ -27,3 +27,13 @@ export const uploadRateLimit = rateLimit({
   limit: 30,
   keyGenerator: (req) => req.auth?.userId ?? clientIp(req),
 });
+
+/** Tutor messages per user: protects AI spend and the provider quota. */
+export const tutorRateLimit = rateLimit({
+  ...shared,
+  windowMs: 60 * 1000,
+  limit: 20,
+  keyGenerator: (req) => req.auth?.userId ?? clientIp(req),
+  handler: (_req, _res, next) =>
+    next(new AppError(429, 'RATE_LIMITED', 'You are sending messages very quickly. Please wait a moment before asking Zoya again.')),
+});
