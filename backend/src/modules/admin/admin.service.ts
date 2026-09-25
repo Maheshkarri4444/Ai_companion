@@ -15,7 +15,10 @@ import { Conversation } from '../../models/conversation.model';
 import { Chunk, Concept } from '../../models/knowledge.model';
 import { Job } from '../../models/job.model';
 import { LearningContext } from '../../models/learningContext.model';
+import { Mastery } from '../../models/mastery.model';
+import { Attempt, QuizSession } from '../../models/quiz.model';
 import { storage } from '../../storage/storage';
+import { masteryOf, masterySummary } from '../mastery/estimator';
 import { vectorIndexState } from '../knowledge/vector-index';
 import { aiUsageForUser } from './ai-admin.service';
 import { getWorkerStatus } from './jobs-admin.service';
@@ -217,6 +220,7 @@ export async function getUserDetail(userId: string) {
   ]);
   const statusByProject = await materialStatusByProject(projects.map((p) => p._id));
   const projectName = new Map(projects.map((p) => [p._id.toString(), p.name]));
+  const assessments = await assessmentsForUser(owner, projectName);
 
   return {
     user: toUserDto(user),
@@ -231,6 +235,7 @@ export async function getUserDetail(userId: string) {
       memoryCount,
     },
     aiUsage,
+    assessments,
     spaces: spaces.map((space) => {
       const own = projects.filter((p) => p.spaceId.equals(space._id));
       const projectDtos = own.map((p) => toProjectDto(p, statusByProject.get(p._id.toString()) ?? emptyStatusCounts()));
@@ -244,6 +249,79 @@ export async function getUserDetail(userId: string) {
     }),
     materials: materials.map((m) => ({ ...toMaterialDto(m), projectName: projectName.get(m.projectId.toString()) ?? null })),
     recentActivity: recentEvents.map(toActivityDto),
+  };
+}
+
+/** A learner's assessments and progress: quizzes, answer quality by type, grading health and mastery per Project. */
+async function assessmentsForUser(owner: Types.ObjectId, projectName: Map<string, string>) {
+  const [sessionRows, attemptRows, recent, masteries, concepts] = await Promise.all([
+    QuizSession.aggregate<{ _id: string; n: number }>([{ $match: { ownerId: owner } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+    Attempt.aggregate<{ _id: { type: string; status: string }; n: number; correct: number; score: number }>([
+      { $match: { ownerId: owner } },
+      {
+        $group: {
+          _id: { type: '$type', status: '$grading.status' },
+          n: { $sum: 1 },
+          correct: { $sum: { $cond: ['$isCorrect', 1, 0] } },
+          score: { $sum: { $ifNull: ['$outcome', 0] } },
+        },
+      },
+    ]),
+    QuizSession.find({ ownerId: owner, status: 'completed' }).sort({ completedAt: -1 }).limit(8).lean(),
+    Mastery.find({ ownerId: owner }, { projectId: 1, conceptId: 1, theta: 1, evidenceCount: 1, lastPracticedAt: 1 }).lean(),
+    Concept.find({ ownerId: owner }, { projectId: 1, name: 1, importance: 1 }).lean(),
+  ]);
+  const sessions = new Map(sessionRows.map((r) => [r._id, r.n]));
+  const graded = attemptRows.filter((r) => r._id.status === 'graded');
+  const answered = graded.reduce((n, r) => n + r.n, 0);
+  const now = new Date();
+  const masteryOfConcept = new Map(masteries.map((m) => [m.conceptId.toString(), m]));
+  const byProject = new Map<string, Array<{ name: string; importance: number; mastery: number | null }>>();
+  for (const c of concepts) {
+    const list = byProject.get(c.projectId.toString()) ?? [];
+    list.push({ name: c.name, importance: c.importance ?? 0.5, mastery: masteryOf(masteryOfConcept.get(c._id.toString()), now) });
+    byProject.set(c.projectId.toString(), list);
+  }
+  return {
+    quizzesCompleted: sessions.get('completed') ?? 0,
+    quizzesActive: sessions.get('active') ?? 0,
+    questionsAnswered: attemptRows.reduce((n, r) => n + r.n, 0),
+    accuracy: answered ? Math.round((graded.reduce((n, r) => n + r.correct, 0) / answered) * 1000) / 1000 : null,
+    avgScore: answered ? Math.round((graded.reduce((n, r) => n + r.score, 0) / answered) * 1000) / 1000 : null,
+    byType: ['mcq', 'open'].map((type) => {
+      const rows = graded.filter((r) => r._id.type === type);
+      const n = rows.reduce((s, r) => s + r.n, 0);
+      return { type, answered: n, avgScore: n ? Math.round((rows.reduce((s, r) => s + r.score, 0) / n) * 1000) / 1000 : null };
+    }),
+    grading: {
+      pending: attemptRows.filter((r) => r._id.status === 'pending').reduce((n, r) => n + r.n, 0),
+      failed: attemptRows.filter((r) => r._id.status === 'failed').reduce((n, r) => n + r.n, 0),
+    },
+    recentQuizzes: recent.map((s) => ({
+      id: s._id.toString(),
+      projectId: s.projectId.toString(),
+      projectName: projectName.get(s.projectId.toString()) ?? null,
+      mode: s.mode,
+      completedAt: s.completedAt,
+      answered: s.summary?.answered ?? s.answeredCount,
+      correct: s.summary?.correct ?? s.correctCount,
+      accuracy: s.summary?.accuracy ?? null,
+      avgScore: s.summary?.avgScore ?? null,
+      needsWork: s.summary?.needsWork ?? [],
+    })),
+    mastery: [...byProject.entries()]
+      .map(([projectId, items]) => {
+        const summary = masterySummary(items);
+        const assessed = items.filter((i) => i.mastery !== null).sort((a, b) => (a.mastery as number) - (b.mastery as number));
+        return {
+          projectId,
+          projectName: projectName.get(projectId) ?? null,
+          ...summary,
+          weakest: assessed.slice(0, 3).map((i) => ({ name: i.name, mastery: i.mastery })),
+        };
+      })
+      .filter((p) => p.projectName !== null)
+      .sort((a, b) => b.assessedConcepts - a.assessedConcepts),
   };
 }
 

@@ -5,9 +5,9 @@
 
 | | |
 |---|---|
-| **Version** | 1.2 |
+| **Version** | 1.3 |
 | **Last updated** | 2026-09-25 |
-| **Current phase** | Phases 1–3 ✅ built and verified — Foundation, background knowledge pipeline, and the complete AI layer (Zoya tutor, learning context, evaluation, observability). Phase 4 (adaptive quiz & mastery) next |
+| **Current phase** | Phases 1–4 ✅ built — Foundation, background knowledge pipeline, the AI layer (Zoya tutor, learning context, evaluation, observability) and the adaptive quiz with mastery estimation. Phase 5 (growth, recommendations, analytics) next |
 | **Stack** | Next.js 16 · Node.js 22 / Express 5 · MongoDB Atlas 8 · Google Gemini |
 
 ---
@@ -108,7 +108,7 @@ The system continuously answers three questions, each backed by explicit evidenc
 
 | Purpose | Env var | Default | Verification notes |
 |---|---|---|---|
-| Primary generation (Tutor answers, LLM judge; later quiz generation & grading) | `AI_MODEL_PRIMARY` | `gemini-3.6-flash` | Supports every thinking level incl. `minimal`; first token ≈ 2 s. Returns 503 "high demand" at peak times → fallback chain |
+| Primary generation (Tutor answers, LLM judges, quiz generation & grading) | `AI_MODEL_PRIMARY` | `gemini-3.6-flash` | Supports every thinking level incl. `minimal`; first token ≈ 2 s. Returns 503 "high demand" at peak times → fallback chain |
 | Primary fallback chain | `AI_MODEL_FALLBACKS` | `gemini-3.7-flash,gemini-3-flash-preview,gemini-3.5-flash-lite` | 3.7-flash rejects `minimal` thinking (mapped to `low`); observed 503s that took ~10 s to arrive → breaker parks the model immediately (§12) |
 | Light tasks (intent, summaries, titles, memory extraction, OCR, concepts) | `AI_MODEL_LIGHT` / `AI_MODEL_LIGHT_FALLBACKS` | `gemini-3.5-flash-lite` / `gemini-3.1-flash-lite,gemini-3-flash-preview` | ~1 s, no thinking tokens |
 | Embeddings | `AI_EMBEDDING_MODEL` / `AI_EMBEDDING_DIM` | `gemini-embedding-2` / `768` | Each text must be its own `Content` (a `string[]` yields a single embedding); vectors L2-normalised |
@@ -190,14 +190,16 @@ Ai_study_companion/
 │   │   ├── lib/                  logger, AppError, request context (ALS), typed handler(), db, validation, semaphore, vector math, text helpers
 │   │   ├── middleware/           requestContext, authenticate + requireRole, csrfGuard, rateLimits (auth · upload · tutor), errorHandler
 │   │   ├── models/               one Mongoose model per collection (§7)
-│   │   ├── ai/                   types · errors · models (capabilities + prices) · gemini · mock · schema (zod → model JSON schema) · gateway · prompts/{knowledge,tutor,evaluation}
+│   │   ├── ai/                   types · errors · models (capabilities + prices) · gemini · mock · schema (zod → model JSON schema) · gateway · prompts/{knowledge,tutor,evaluation,quiz}
 │   │   ├── jobs/                 queue (enqueue/claim/lease/fail/recover) · registry · worker (+ processJob, drainJobs) · system (reconciler)
 │   │   ├── modules/knowledge/    extract · ocr · chunker · injection · concepts · pipeline · vector-index · retrieval · knowledge.service/routes
 │   │   ├── modules/tutor/        orchestrator · understand · sources · citations · tools · insufficient · dto · tutor.jobs · tutor.service/routes/schemas
 │   │   ├── modules/learning-context/  learning-context.service (remember / recall / forget / resolve) · providers (context composition registry)
-│   │   ├── modules/evaluation/   evaluation.service (store + judge registry) · tutor-rules · tutor-judge · evaluation.jobs
+│   │   ├── modules/evaluation/   evaluation.service (store + judge registry) · tutor-rules · tutor-judge · quiz-rules · quiz-judge · evaluation.jobs
+│   │   ├── modules/quiz/         selection (pure engine) · validation (pure) · generation · grading · question-factory · summary · dto · learning (workflows) · providers · tools · quiz.jobs · quiz.service/routes/schemas
+│   │   ├── modules/mastery/      estimator (pure ability model) · mastery.service (exactly-once updates, snapshots) · mastery.routes
 │   │   ├── modules/admin/        admin.service · ai-admin.service (usage, traces, evaluation) · jobs-admin.service · routes/schemas
-│   │   ├── modules/workflows.ts  event → workflow subscriptions (material.uploaded, tutor.answered, tutor.feedback)
+│   │   ├── modules/workflows.ts  event → workflow subscriptions (material.uploaded, tutor.answered, tutor.feedback, quiz.question_answered, quiz.completed)
 │   │   ├── modules/<domain>/     auth · spaces · projects · materials · activity · cascade · health
 │   │   ├── storage/              StorageProvider interface + GridFS implementation
 │   │   └── scripts/              seed-admin.ts
@@ -205,8 +207,8 @@ Ai_study_companion/
 │   └── tests/                    Vitest + Supertest + mongodb-memory-server + scriptable MockAIProvider
 └── frontend/
     └── src/
-        ├── app/                  (auth)/login|register · (learner)/dashboard|spaces|projects/[id]/{overview,materials,tutor} · admin/* (incl. ai-usage, ai-evaluation, jobs)
-        ├── components/           ui/ (kit) · layout/ · zoya/ (animated avatar) · tutor/ (chat, markdown + citations, source viewer, composer, memory) · admin/ (charts, trace dialog)
+        ├── app/                  (auth)/login|register · (learner)/dashboard|spaces|projects/[id]/{overview,materials,tutor,quiz,quiz/[sessionId]} · admin/* (incl. ai-usage, ai-evaluation, jobs)
+        ├── components/           ui/ (kit) · layout/ · zoya/ (animated avatar) · tutor/ (chat, markdown + citations, source viewer, composer, memory) · quiz/ (question card + feedback, results, mastery) · admin/ (charts, trace dialog)
         ├── lib/                  api client, SSE tutor client, query hooks, types, formatters
         └── proxy.ts              navigation gating (session-cookie presence + role hint)
 ```
@@ -224,10 +226,10 @@ Ai_study_companion/
 | `knowledge` | Processing pipeline, pages, chunks, concepts, hybrid retrieval | 2 ✅ |
 | `ai` | Provider abstraction, gateway, prompts, AI call logging | 3 ✅ |
 | `tutor` | Conversations, grounded streaming answers, tools, feedback, continuity jobs | 3 ✅ |
-| `learning-context` | Persistent learner memory + context-provider registry | 3 ✅ (providers for mastery/assessments join in 4–5) |
+| `learning-context` | Persistent learner memory + context-provider registry | 3 ✅ (mastery + assessment-history providers ✅ 4) |
 | `evaluation` | Rule checks, LLM judge, feedback, offline suite | 3 ✅ |
-| `quiz` | Adaptive sessions, question generation, grading | 4 |
-| `mastery` | Ability model, snapshots | 4 |
+| `quiz` | Adaptive sessions, question selection, generation + validation, grading, learning workflows, Tutor tools & context providers | 4 ✅ |
+| `mastery` | Ability model (θ), exactly-once updates, snapshots, mastery API | 4 ✅ |
 | `growth` · `recommendations` · `context` · `analytics` | Trends, next actions, learner memory, aggregates | 5 |
 | `evals` | Offline suites for quiz/recommendations (the Tutor suite exists) | 6 |
 
@@ -301,7 +303,7 @@ sequenceDiagram
   routing hint. **The API is the only authority**: every request is re-verified server-side.
 - **Tenant isolation**: owner-scoped queries everywhere; foreign ids return **404, not 403** (no existence oracle); nested resources resolve through
   owned parents (`material → project → owner`). Background jobs carry `ownerId`/`projectId` and re-verify ownership before acting (§10).
-- **Rate limits**: auth 20 req / 15 min / IP · uploads 30 / hour / user · Tutor 20 messages / min / user · quiz answers 30 / min / user (P4).
+- **Rate limits**: auth 20 req / 15 min / IP · uploads 30 / hour / user · Tutor 20 messages / min / user · quiz 40 requests / min / user (start · next · answer) ✅.
 
 ---
 
@@ -373,28 +375,45 @@ Index: `{ownerId:1, projectId:1, lastMessageAt:-1}`.
 **unique per owner** — idempotent sends) · `replyTo` (assistant → question) · `status` (`streaming`|`complete`|`stopped`|`error`) · `mode` (`auto`|`general`) ·
 `action` (UI quick action) · `intent` · `grounding {status: grounded|partial|insufficient|general|conversational, sufficiency, topScore, method, invalidCitations, degraded}` ·
 `sources [{ref:'S1', kind: chunk|page, chunkId, materialId, materialTitle, pageStart, pageEnd, sectionTitle, snippet, score, origin: retrieval|tool|carried, cited, flagged}]` ·
-`suggestions[]` (follow-up questions) · `toolCalls [{name, args, ok, error, summary, latencyMs}]` · `feedback {rating, reason, comment, at}` · `error {code, message}` ·
+`suggestions[]` (follow-up questions) · `toolCalls [{name, args, ok, error, summary, latencyMs, data}]` (`data`: structured output the UI can act on, e.g. `propose_quiz` → quiz link) · `feedback {rating, reason, comment, at}` · `error {code, message}` ·
 `metrics {latencyMs, ttftMs, understandMs, retrieveMs, generateMs, rounds, tokens…, costUsd, model, fallbackUsed}` ·
 `trace {route, intent, understandMethod, standaloneQuery, retrieval (full trace), context (provider trace), carriedSources, flags}` · `aiCallIds[]` · `promptVersion`.
 Indexes: `{conversationId:1, createdAt:1}` · `{ownerId:1, projectId:1, createdAt:-1}` · `{replyTo:1}` · `{status:1, updatedAt:1}` (reconciler) ·
 `{ownerId:1, clientMessageId:1}` unique partial.
 
-**`quiz_sessions`** (P4) — `ownerId` · `projectId` · `status` (`active`|`completed`|`abandoned`) · `mode` (`adaptive`|`focused`|`review`) ·
-`focusConceptIds[]` · `targetCount` · `answeredCount` · `correctCount` · `scoreAvg` · `questionIds[]` · `startedAt` · `completedAt`.
+**`quiz_sessions`** (P4 ✅) — `ownerId` · `spaceId` · `projectId` · `status` (`active`|`completed`|`abandoned` — ended without an answer) ·
+`mode` (`adaptive`|`focused`|`review`) · `questionTypes` (`mixed`|`mcq`|`open`) · `focusConceptIds[]` · `targetCount` (3–15) · counters recomputed from
+the attempts, never incremented (`servedCount`, `answeredCount`, `gradedCount`, `correctCount`, `scoreSum`) · `currentQuestionId` (the question on screen) ·
+`generation {lockedUntil, token, failures, lastError}` (generation lease, §16) · `summary` (stored when the session ends: per concept with mastery
+before → after, per cognitive level and type, strengths, needs work, pages to review) · `startedAt` · `completedAt` · `lastActivityAt`.
+Indexes: `{ownerId:1, projectId:1, createdAt:-1}` · `{projectId:1, status:1}` · `{status:1, completedAt:-1}` (reconciler) ·
+`{ownerId:1, projectId:1}` **unique partial** on `status: 'active'` (one quiz in progress per Project).
 
-**`questions`** (P4) — `ownerId` · `projectId` · `sessionId` · `conceptIds[]` · `type` (`mcq`|`open`) · `difficulty` (1–5) ·
-`cognitiveLevel` (`recall`|`understand`|`apply`|`analyze`) · `stem` · `options [{id, text}]` · `correctOptionId` · `explanation` ·
-`rubric {keyPoints[], sampleAnswer}` · `sources [{materialId, pageStart, pageEnd, chunkId}]` · `selection {priority, reason, predictedP}` · `stemHash` · `aiCallId`.
+**`questions`** (P4 ✅) — `ownerId` · `projectId` · `sessionId` · `status` (`ready` = pre-generated | `served` | `answered` | `discarded`) · `position` ·
+`conceptIds[]` · `conceptNames[]` · `type` (`mcq`|`open`) · `difficulty` (1–5) · `cognitiveLevel` (`recall`|`understand`|`apply`|`analyze`) · `stem` ·
+`options [{id A–D, text, rationale}]` · `correctOptionId` · `explanation` · `rubric {keyPoints[2–6], sampleAnswer}` ·
+`sources [{ref, chunkId, materialId, materialTitle, pageStart, pageEnd, sectionTitle, snippet, cited}]` ·
+`selection {priority, probability, predictedP, targetP, mastery, evidence, explored, reason, components}` (why this question — shown to the learner) ·
+`stemHash` · `generation {aiCallId, promptVersion, model, attempts, latencyMs, costUsd, validation {issues, warnings}, selfRated}` · `servedAt` · `answeredAt`.
+Indexes: `{sessionId:1, status:1}` · `{ownerId:1, projectId:1, stemHash:1}` · `{ownerId:1, projectId:1, conceptIds:1, createdAt:-1}` · `{projectId:1, createdAt:-1}`.
 
-**`attempts`** (P4) — `ownerId` · `projectId` · `sessionId` · `questionId` · `conceptIds[]` · `response {optionId | text}` · `outcome` (0–1) ·
-`isCorrect` · `feedback {summary, understood[], missing[], misconceptions[]}` · `grading {status:'graded'|'pending'|'failed', method:'exact'|'ai', aiCallId}` ·
-`masteryDelta [{conceptId, before, after}]` · `timeMs` · `idempotencyKey` (unique).
+**`attempts`** (P4 ✅) — `ownerId` · `projectId` · `sessionId` · `questionId` · `conceptIds[]` · `type` · `difficulty` · `cognitiveLevel` ·
+`response {optionId, text, skipped}` · `outcome` (0–1; null while grading is pending) · `isCorrect` ·
+`feedback {summary, understood[], missing[], misconceptions[], keyPoints [{point, status: covered|partial|missing, evidence}]}` ·
+`grading {status: graded|pending|failed, method: exact|ai|rule, aiCallId, promptVersion, model, scores, flags, error, attempts, gradedAt}` ·
+`masteryApplied` · `masteryDelta [{conceptId, name, before, after, thetaBefore, thetaAfter}]` · `timeMs` · `idempotencyKey` · `report {target, reason, comment, at}`.
+Indexes: `{questionId:1}` **unique** (one answer per question) · `{ownerId:1, idempotencyKey:1}` **unique** · `{sessionId:1, createdAt:1}` ·
+`{ownerId:1, projectId:1, createdAt:-1}` · `{ownerId:1, projectId:1, conceptIds:1, createdAt:-1}` · `{'grading.status':1, updatedAt:1}` ·
+`{masteryApplied:1, 'grading.status':1, updatedAt:1}` (reconciler).
 
-**`mastery`** (P4) — `ownerId` · `projectId` · `conceptId` · `theta` · `evidenceCount` · `correctCount` · `byLevel {recall|understand|apply|analyze: {n, sum}}` ·
-`recentOutcomes` (last 10) · `lastPracticedAt`. Index: `{ownerId:1, projectId:1, conceptId:1}` unique.
+**`mastery`** (P4 ✅) — `ownerId` · `projectId` · `conceptId` · `theta` · `evidenceCount` · `correctCount` · `scoreSum` ·
+`byLevel {recall|understand|apply|analyze: {n, sum}}` · `byType {mcq|open: {n, sum}}` · `recentOutcomes` (last 10) ·
+`appliedAttemptIds` (last 30 — the exactly-once guard) · `lastPracticedAt` · `version` (optimistic concurrency).
+Indexes: `{ownerId:1, projectId:1, conceptId:1}` unique · `{projectId:1}`.
 
-**`mastery_snapshots`** (P4) — `ownerId` · `projectId` · `conceptId` · `mastery` · `theta` · `evidenceCount` · `cause {type, attemptId}`.
-Index: `{projectId:1, conceptId:1, createdAt:1}`.
+**`mastery_snapshots`** (P4 ✅) — `ownerId` · `projectId` · `conceptId` · `mastery` · `theta` · `evidenceCount` · `cause {type:'attempt', attemptId, sessionId}` —
+one per concept per graded answer: the raw series for Growth (P5).
+Indexes: `{projectId:1, conceptId:1, createdAt:1}` · `{ownerId:1, projectId:1, createdAt:-1}` · `{conceptId:1, 'cause.attemptId':1}` unique (a replayed update never writes twice).
 
 **`recommendations`** (P5) — `ownerId` · `projectId` · `spaceId` · `kind` · `title` · `rationale` ·
 `action {type:'open_material'|'start_quiz'|'ask_tutor'|'review_concept'|'upload_material', params}` · `priority` ·
@@ -459,7 +478,7 @@ All routes are under `/api`. 🔓 public · 🔒 authenticated · 👑 admin. Un
 | GET · PATCH · DELETE | `/spaces/:spaceId` | 🔒 | Space dashboard data · update · delete (cascade) | 1 |
 | GET · POST | `/spaces/:spaceId/projects` | 🔒 | List · create Project (`name`, `description`, `learningGoal`) | 1 |
 | GET | `/projects/recent` | 🔒 | Recently active Projects across Spaces | 1 |
-| GET · PATCH · DELETE | `/projects/:projectId` | 🔒 | Project dashboard data · update · delete (cascade) | 1 |
+| GET · PATCH · DELETE | `/projects/:projectId` | 🔒 | Project dashboard data (+ `learning`: quizzes, accuracy, mastery summary ✅ 4) · update · delete (cascade) | 1 |
 | GET | `/activity` | 🔒 | Own activity feed (`projectId`, `spaceId`, `type`, `limit`) | 1 |
 
 **Materials & knowledge**
@@ -471,7 +490,7 @@ All routes are under `/api`. 🔓 public · 🔒 authenticated · 👑 admin. Un
 | GET | `/projects/:projectId/materials/:materialId/file` | 🔒 | Stream the PDF inline (supports `#page=N` deep links for citations) | 1 |
 | POST | `/projects/:projectId/materials/:materialId/retry` | 🔒 | Re-process a failed material (new version → new idempotency key; completed stages reused) | 2 ✅ |
 | GET | `/projects/:projectId/materials/:materialId/pages/:page` | 🔒 | Extracted page text (citation viewer) | 2 ✅ |
-| GET | `/projects/:projectId/concepts` | 🔒 | Project concepts with source pages (+ mastery in P4) | 2 ✅ |
+| GET | `/projects/:projectId/concepts` | 🔒 | Project concepts with source pages (+ mastery, band and evidence count ✅ 4) | 2 ✅ |
 
 **Tutor — Zoya** (P3 ✅, all 🔒, mounted under `/projects/:projectId/tutor`)
 
@@ -485,16 +504,23 @@ All routes are under `/api`. 🔓 public · 🔒 authenticated · 👑 admin. Un
 | POST | `/messages/:messageId/feedback` | 👍/👎 + reason + comment → evaluation record; 👎 triggers the LLM judge |
 | GET · DELETE | `/memory` · `/memory/:itemId` | "What Zoya remembers" — list · forget one item |
 
-**Quiz, mastery, growth, recommendations, analytics** (P4–P5)
+**Quiz & mastery** (P4 ✅, all 🔒; quiz routes mounted under `/projects/:projectId/quizzes`; start, next and answer share the quiz rate limit)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | Quiz home: readiness (ready / pending materials, assessable concepts), the session in progress, completed history, stats, concept mastery + summary |
+| POST | `/` | Start `{mode: adaptive\|focused\|review, targetCount 3–15, questionTypes: mixed\|mcq\|open, conceptIds (focused, ≤ 8)}` → 201. Closes a session in progress; 409 `NO_QUIZ_MATERIAL` without processed material |
+| GET | `/:sessionId` | Session with the questions served so far (answer keys only once answered or ended) and live summary / stored results |
+| POST | `/:sessionId/next` | The question on screen (idempotent) → a pre-generated one → one generated now (≤ 20 s); otherwise **202 `{preparing: true}`** — poll again; `{done: true}` at the end; 503 when no valid question can be written |
+| POST | `/:sessionId/questions/:questionId/answer` | `{idempotencyKey, optionId? \| text? \| skipped?, timeMs?}` → graded attempt (feedback, answer key, sources, mastery delta) + session. An open answer whose grading fails or exceeds ~22 s returns `grading.status: pending` (graded by a job; poll the session). Same key → replay; 409 `ALREADY_ANSWERED` · `QUIZ_ENDED` · `NOT_CURRENT_QUESTION` |
+| POST | `/:sessionId/questions/:questionId/report` | `{target: question\|grading, reason, comment?}` → learner-feedback evaluation; a reported question always goes to the judge |
+| POST | `/:sessionId/complete` | End early (idempotent) → summary + learning workflow; nothing answered → `abandoned` |
+| GET | `/projects/:projectId/mastery` | Per concept: mastery (null = not assessed), band, confidence, evidence, accuracy per cognitive level, weakest level, recent outcomes; summary (overall, coverage, needs attention) |
+
+**Growth, recommendations, analytics** (P5)
 
 | Method | Path | Purpose | Phase |
 |---|---|---|---|
-| GET · POST | `/projects/:projectId/quizzes` | History · start session `{mode, targetCount?, conceptIds?}` | 4 |
-| GET | `/projects/:projectId/quizzes/:sessionId` | Session state and results | 4 |
-| POST | `/projects/:projectId/quizzes/:sessionId/next` | Next adaptive question | 4 |
-| POST | `/projects/:projectId/quizzes/:sessionId/questions/:questionId/answer` | Submit answer (idempotency key) → evaluation + mastery delta | 4 |
-| POST | `/projects/:projectId/quizzes/:sessionId/complete` | Complete → learning workflow | 4 |
-| GET | `/projects/:projectId/mastery` | Concept mastery with confidence | 4 |
 | GET | `/projects/:projectId/growth?window=30d` | Trends + improving / stable / attention | 5 |
 | GET · POST | `/projects/:projectId/recommendations` (+ `/:id/dismiss`, `/:id/complete`, `/refresh`) | Next actions lifecycle | 5 |
 | GET | `/projects/:projectId/analytics` · `/analytics/global` | Project and global analytics | 5 |
@@ -504,7 +530,7 @@ All routes are under `/api`. 🔓 public · 🔒 authenticated · 👑 admin. Un
 | Method | Path | Purpose | Phase |
 |---|---|---|---|
 | GET | `/admin/overview` | KPIs, 14-day activity series, recent sign-ups, recent activity | 1 |
-| GET | `/admin/users` · `/admin/users/:userId` | Search/paginate users · learning journey of one user | 1 (+ P4/P5 data) |
+| GET | `/admin/users` · `/admin/users/:userId` | Search/paginate users · learning journey of one user (AI usage; assessments & mastery ✅ 4) | 1 (+ P5 data) |
 | GET | `/admin/spaces` · `/admin/projects` · `/admin/materials` | Platform-wide lists with filters (`userId`, `spaceId`, `projectId`, `status`, `search`) | 1 |
 | GET | `/admin/materials/:materialId/file` | View a PDF for debugging (audit-logged) | 1 |
 | GET | `/admin/activity` · `/admin/activity/types` | Filter by user, Space, Project, type, time period (`from`/`to`) · known event types | 1 |
@@ -514,7 +540,7 @@ All routes are under `/api`. 🔓 public · 🔒 authenticated · 👑 admin. Un
 | GET | `/admin/ai/overview?range=24h|7d|30d` | Calls, errors, fallback rate, p50/p95 latency, TTFT, tokens, cost; by feature, by model, time series, top users, recent failures, gateway state | 3 ✅ |
 | GET | `/admin/ai/calls` · `/admin/ai/calls/:callId` | Call explorer (feature/status/model/user/project/trace) · trace: attempts, request waterfall, Tutor retrieval trace, tools, answer | 3 ✅ |
 | GET | `/admin/ai/config` | Models, thresholds, prompt versions, registered tools and context providers | 3 ✅ |
-| GET | `/admin/ai/evaluations/overview` · `/admin/ai/evaluations` · `/admin/ai/eval-runs/:runId` | Evaluator pass rates, judge averages, scores by prompt version, top rule failures, grounding distribution, offline runs · list · run detail | 3 ✅ |
+| GET | `/admin/ai/evaluations/overview` · `/admin/ai/evaluations` · `/admin/ai/eval-runs/:runId` | Tutor evaluator pass rates, judge averages, scores by prompt version, top rule failures, grounding distribution, offline runs; **assessment quality** (question validity, grading checks, question judge, learner reports, grading backlog) ✅ 4 · list (filter by evaluator, verdict, subject) · run detail | 3 ✅ |
 | GET | `/admin/engagement` · `/admin/learning` | DAU/WAU/MAU, retention; quiz/mastery analytics | 5 |
 
 ---
@@ -573,7 +599,7 @@ A durable queue in the `jobs` collection; the worker runs in the API process (`A
 
 | Operation | Mechanism |
 |---|---|
-| Enqueue | Insert `{type, payload, ownerId, projectId, idempotencyKey, runAt, maxAttempts, priority, traceId}`. Duplicate `idempotencyKey` (E11000) returns the existing job — **duplicate-job protection**. |
+| Enqueue | Insert `{type, payload, ownerId, projectId, idempotencyKey, runAt, maxAttempts, priority, traceId}`. Duplicate `idempotencyKey` (E11000) returns the existing job — **duplicate-job protection**. Idle worker slots in the same process are woken at once (a learner-facing job such as preparing the next question never waits out the poll back-off); separate worker processes poll. |
 | Claim | Atomic `findOneAndUpdate({status:'queued', runAt ≤ now}, {$set:{status:'running', lockedBy, lockedUntil: now + lease}, $inc:{attempts:1}}, sort {priority:-1, runAt:1})`. |
 | Heartbeat | Long handlers extend `lockedUntil` every lease/3 and report `progress {stage, pct}`. |
 | Success | `status:'succeeded'`, `result`, `durationMs`. |
@@ -588,12 +614,14 @@ A durable queue in the `jobs` collection; the worker runs in the API process (`A
 | Job type | Trigger | Phase |
 |---|---|---|
 | `material.process` | `material.uploaded` subscription, learner/admin retry, reconciler | 2 ✅ |
-| `system.reconcile` | scheduler (per-minute key) — recover expired leases, re-enqueue orphaned materials, close abandoned `streaming` answers | 2 ✅ |
+| `system.reconcile` | scheduler (per-minute key) — recover expired leases, re-enqueue orphaned materials, close abandoned `streaming` answers; quiz (4 ✅): schedule grading for pending answers without a live job (settle them as "not graded" once that job has ended), finish graded answers whose mastery update was interrupted, re-record lost `quiz.completed` events | 2 ✅ |
 | `tutor.summarize` | `tutor.answered` when a title is still `auto` or ≥ 6 messages are beyond the summary (conversations ≥ 8 messages) | 3 ✅ |
 | `tutor.memory` | every `tutor.answered` (usually extracts nothing) | 3 ✅ |
-| `ai.evaluate` | sampled answers (`TUTOR_JUDGE_SAMPLE_RATE`, deterministic by message id), every rule failure, every 👎 | 3 ✅ |
-| `quiz.pregenerate` · `quiz.grade` | quiz flow | 4 |
-| `learning.update` · `learning.repeated_mistake` | `quiz.completed`, repeated wrong answers → write `learning_context` via `rememberLearning` | 4–5 |
+| `ai.evaluate` | sampled answers (`TUTOR_JUDGE_SAMPLE_RATE`, deterministic by message id), every rule failure, every 👎; quiz questions (4 ✅) with validation warnings, sampled (`QUIZ_JUDGE_SAMPLE_RATE`) or reported | 3 ✅ |
+| `quiz.pregenerate` | session start and every answer — one per question slot (`quiz.pregenerate:<session>:<slot>`); skipped while a question is on screen, so the choice always reflects the latest answer | 4 ✅ |
+| `quiz.grade` | an open answer whose synchronous grading failed or ran out of time (5 attempts; after the last, the answer is kept as "not graded" and never counts towards mastery) | 4 ✅ |
+| `learning.update` | `quiz.completed` — waits for background grading, then records strengths, weaknesses, recall-vs-application gaps and a first-quiz milestone (`rememberLearning`), and retires the weaknesses of mastered concepts (`resolveLearning`) | 4 ✅ |
+| `learning.repeated_mistake` | `quiz.question_answered` when ≥ 2 of the last 4 answers on a concept are wrong → `mistake_pattern` (light model, rule-based fallback) | 4 ✅ |
 | `recommendations.generate` | `learning.update`, `material.processed`, manual refresh | 5 |
 
 `drainJobs()` runs due jobs synchronously (tests, the evaluation runner, scripts); the worker loop and `drainJobs` share `processJob()`.
@@ -615,20 +643,21 @@ feed, analytics, recommendations and the admin console.
 | `material.processed` / `.failed` / `.reprocessed` | pipeline, retry | 2 ✅ | (P5: `recommendations.generate`) |
 | `tutor.answered` (question preview, grounding, intent, citation count, rules verdict) | tutor | 3 ✅ | `tutor.memory`, `tutor.summarize`, `ai.evaluate` (sampled / on rule failure) |
 | `tutor.feedback` (rating, reason) | tutor | 3 ✅ | `ai.evaluate` on 👎 |
-| `quiz.started`, `quiz.question_answered`, `quiz.completed` | quiz | 4 | `learning.update`, `learning.repeated_mistake` |
-| `mastery.updated` | mastery | 4 | snapshot |
+| `quiz.started`, `quiz.question_answered` (hidden from the learner's feed), `quiz.completed` | quiz | 4 ✅ | `learning.repeated_mistake` (answered), `learning.update` (completed) |
+| `mastery.updated` (only when a concept changes band) | quiz, after the mastery update | 4 ✅ | — (a snapshot is written with every update) |
 | `recommendation.generated` / `.completed` / `.dismissed` | recommendations | 5 | — |
 
 Subscriptions live in `modules/workflows.ts` and only enqueue jobs whose idempotency keys derive from the event subject
 (`material.process:<id>:v<version>`, `tutor.memory:<messageId>`, `ai.evaluate:tutor_message:<messageId>`, …).
-**Consistency**: an event insert and its job enqueue are separate writes. If the process dies between them, the reconciler repairs the gap; every step is idempotent, so repair is safe.
+**Consistency**: an event insert and its job enqueue are separate writes. If the process dies between them, the reconciler repairs the gap; every step is idempotent, so repair is safe
+(e.g. a completed quiz whose `quiz.completed` event was lost is re-recorded, which starts its learning workflow).
 
 ---
 
 ## 12. AI layer
 
 ```
-Feature code (tutor, pipeline, jobs, evaluation; later quiz, grading, recommendations)
+Feature code (tutor, pipeline, jobs, evaluation, quiz generation & grading; later recommendations)
       │ feature tag (AI_FEATURES catalogue) · prompt version · meta {ownerId, projectId, conversationId, messageId, jobId, traceId}
       ▼
 AIGateway ── generate · structured<T>(zod) · stream (text + tool calls) · embed
@@ -638,11 +667,12 @@ AIGateway ── generate · structured<T>(zod) · stream (text + tool calls) ·
 AIProvider ── GeminiProvider (@google/genai) · MockAIProvider (scriptable, deterministic bag-of-words embeddings) · UnconfiguredProvider
 ```
 
-- **Tiers**: `primary` (answers, judge) and `light` (intent, summaries, memory, OCR, concepts), each an ordered model chain from env.
+- **Tiers**: `primary` (answers, judges, quiz generation & grading) and `light` (intent, summaries, memory, OCR, concepts, mistake patterns), each an ordered model chain from env.
 - **Feature catalogue** (`AI_FEATURES`): `tutor.answer|intent|summarize|title|memory`, `material.ocr|concepts`, `embed.document|query|memory`,
   `quiz.generate|grade`, `insight.generate`, `recommend.generate`, `eval.judge`, `system.probe` — later phases only add prompts.
-- **Timeouts**: non-streaming default 60 s (intent 8 s, judge 45 s, concepts 120 s); streaming **time-to-first-token 15 s per model attempt** for the
-  Tutor, then a 30 s idle timeout. Timeouts race the provider promise, so a hung SDK call cannot hang a request.
+- **Timeouts**: non-streaming default 60 s (intent 8 s, judge 45 s, concepts 120 s, quiz generation 45 s, grading 30 s); streaming **time-to-first-token 15 s per model attempt** for the
+  Tutor, then a 30 s idle timeout. Timeouts are per attempt and race the provider promise, so a hung SDK call cannot hang a request. Where a
+  learner waits synchronously, an overall deadline (`AbortSignal`) caps the whole chain — grading an open answer gets 22 s, then continues as a job.
 - **Retries & fallback**: errors are classified (`rate_limited`, `unavailable`, `timeout`, `model_not_found`, `unsupported_config`, `invalid_request`,
   `auth`, `blocked`, `invalid_output`, `aborted`, …). Recoverable kinds move to the next model; a model that rejects a thinking level is retried
   without it; a single-model chain retries once on 503. Streams fall back only before the first token.
@@ -654,8 +684,9 @@ AIProvider ── GeminiProvider (@google/genai) · MockAIProvider (scriptable, 
   validation so an over-long but correct answer never costs a repair call. **Nothing AI-generated is persisted unvalidated.**
 - **Embeddings**: batches of 50, 3 attempts with backoff, **never** a different model (vectors would not be comparable); query embeddings cached
   (10 min, 500 entries).
-- **Prompt registry**: `ai/prompts/{knowledge,tutor,evaluation}.ts` export versioned prompts (`tutor.v2`, `understand.v1`, `summary.v1`,
-  `memory.v1`, `judge.tutor.v1`, `concepts.v1`, `ocr.v1`); every AI call logs its version, and evaluations are grouped by it.
+- **Prompt registry**: `ai/prompts/{knowledge,tutor,evaluation,quiz}.ts` export versioned prompts (`tutor.v2`, `understand.v1`, `summary.v1`,
+  `memory.v1`, `judge.tutor.v1`, `concepts.v1`, `ocr.v1`, `quiz.generate.v1`, `quiz.grade.v1`, `judge.quiz.v1`, `insight.pattern.v1`); every AI call
+  logs its version, and evaluations are grouped by it.
 - **Cost**: per-model price table (USD / 1M tokens, thinking billed as output) → `costUsd` per call.
 - **Thinking**: `AI_TUTOR_REASONING=minimal` for answers (mapped to the nearest supported level per model); judge uses `low`.
 
@@ -691,7 +722,7 @@ POST /tutor/messages  ─ validate (zod) · rate limit · ownership · idempoten
   (1) Understand  UI action → intent directly · greeting/thanks & "who are you" → heuristics · first question → as-is
                   · ambiguous follow-up → light model: {intent, standaloneQuery}. A message that asks something is never
                   classified as small talk (deterministic override — prevents bypassing the evidence gate) ──── status
-  (2) Context ∥ Retrieval   composeContext(project profile, learner memory, recent activity, later mastery…) ∥ retrieve(standaloneQuery)
+  (2) Context ∥ Retrieval   composeContext(project profile, learner memory, recent activity, mastery, assessment history) ∥ retrieve(standaloneQuery)
                   follow-ups (simplify / example / check / answer_check) carry the previous answer's cited evidence ── status, sources
   (3) Evidence gate   route chat (small talk, no sources) · general (explicit opt-in, clearly labelled) · grounded
                   grounded + no evidence → deterministic "not in your materials" reply (no model call, $0): what the materials DO
@@ -752,62 +783,128 @@ compact JSON result → recorded on the message (`toolCalls`) and visible in the
 | `search_materials(query, material?)` | Extra hybrid retrieval inside the Project (optionally one material); results are registered as new `[S#]` sources the answer can cite | none | 3 |
 | `read_page(material, page)` | Full text of a page ("what does page 5 say?"), registered as a citable source | none | 3 |
 | `list_concepts()` | Key concepts with pages — overviews, revision plans | none | 1 |
-| `get_learning_state()` | Composed learner context (goal, memory, later mastery & assessments) | none | 1 |
+| `get_learning_state()` | Composed learner context (goal, memory, mastery, recent assessment results) | none | 1 |
 | `save_learning_note(kind, note, allProjects?)` | Remember a stated preference/goal or an observed strength/weakness/misconception (deduplicated) | bounded write | 2 |
+| `get_mastery()` (4 ✅) | Concept mastery measured by quiz answers: value, confidence, answers, hardest cognitive level, not-yet-assessed concepts — to adapt an explanation or suggest practice | none | 1 |
+| `propose_quiz(concepts?, questionCount?)` (4 ✅) | Offer a practice quiz on fuzzy-matched Project concepts (3–10 questions). Returns structured `data` (a link into this Project's quiz) that the UI renders as a **Start quiz** button — the learner decides; nothing starts on its own | none | 1 |
 
-The registry (`registerTutorTool`) is the extension point: the quiz phase adds e.g. `propose_quiz` / `get_mastery` without changing the Tutor.
+The registry (`registerTutorTool`) is the extension point: the quiz phase added `get_mastery` and `propose_quiz` without changing the Tutor.
+Tool results may carry structured `data` for the UI (stored on `toolCalls`); the frontend renders only links into the same Project's quiz.
 Tested: a cross-Project search never returns another learner's text; invalid arguments and unknown tools are rejected; the 3rd note in a turn is refused.
 
 ---
 
 ## 16. Adaptive quiz & assessment
 
+PRD §9 flow, as built (`modules/quiz/`):
+
 ```
-Start → load mastery → select concept (priority) → select difficulty (target P(correct) ≈ 0.7) + type + cognitive level
-      → generate question (grounded on the concept's chunks) → validate → serve (pre-generate next in background)
-      → user answers → evaluate (exact for MCQ; AI rubric for open-ended) → update mastery + snapshot → next
+start ─ mode (adaptive | focused | review) · length 3–15 · question types (mixed | mcq | open) · focus concepts
+  → "Understand current mastery"  loadConceptStates: decayed mastery, evidence, recent outcomes, per-level / per-type accuracy,
+                                   concepts studied with the Tutor in the last 7 days
+  → select concept · difficulty · type · cognitive level              (pure, seeded — selection.ts)
+  → evidence: the concept's linked chunks (unflagged, fresh ones first), else hybrid retrieval — ≤ 3 passages as [S1..S3]
+  → generate (primary tier, structured) with learner context (memory, mastery, recent assessment results; 1,500 chars)
+  → validate (rules) → regenerate once with the issues as feedback → else try another concept (≤ 3) → else 503 "try again"
+  → shuffle options · persist `ready` question · rules evaluation · judge job (warnings / sample)
+next ─ the question on screen (idempotent) → a pre-generated one → one generated now under the session lease (≤ 20 s) → else 202 preparing
+answer ─ attempt claimed first (unique per question + idempotency key) → grade: MCQ exact · "I don't know" → rule · open → AI rubric
+  → mastery (exactly once) + snapshot → events → question answered → session counters → complete at target, else pre-generate the next
+complete ─ summary (per concept before → after, per level/type, strengths, needs work, pages to review) → quiz.completed → learning.update
 ```
 
 **Concept priority** (not "wrong → easy, right → hard"):
 
 ```
-priority(c) = 0.35·(1 − m_c) + 0.20·u_c + 0.20·mistake_c + 0.15·due_c + 0.10·importance_c − 0.30·recent_c
-  m_c        mastery (decayed, §17)            u_c     uncertainty = 1 / (1 + n_c/3)
-  mistake_c  min(1, wrong in last 5 on c / 2)  due_c   min(1, daysSincePractice / (1 + 6·m_c²))
-  recent_c   1 if c was used in the last 2 questions of this session (interleaving)
-concept ~ softmax(priority / 0.15)   (mostly exploit weak/uncertain areas, some exploration)
+priority(c) = 0.35·(1 − m) + 0.20·u + 0.20·mistake + 0.15·due + 0.10·importance + 0.10·studied − 0.30·recent
+  m        effective mastery (decayed, §17; 0.5 when not assessed)   u        uncertainty = 1 / (1 + n/3)
+  mistake  min(1, wrong answers in the last 5 on c / 2)             due      min(1, days since practice / (1 + 6·m²)); 1 if never assessed
+  studied  1 if cited in a Tutor answer in the last 7 days          recent   1 if c was asked in the last 2 questions (interleaving)
+concept ~ softmax(priority / 0.15)   — mostly where practice helps most, with some exploration (flagged on the question)
 ```
 
-**Difficulty**: `d ∈ 1..5`, `b_d = 0.8·(d − 3)`; choose `d` minimising `|σ(θ_c − b_d) − 0.7|` (desirable difficulty from evidence).
-**Type & level**: MCQ while evidence is thin; open-ended once `m_c ≥ 0.45` and `n_c ≥ 2`, or when MCQ accuracy is high but depth is unverified
-(≈ 30 % of a session). Cognitive level = the weakest (smoothed accuracy) among levels allowed for `d` (1–2: recall/understand · 3: understand/apply · 4–5: apply/analyze).
-**History**: no repeated stems (`stemHash`); previously missed concepts come back with a new question after ≥ 2 other questions.
+Modes: **focused** draws only from the chosen concepts; **review** draws from concepts with mistakes, due for review or below 50 %
+(falling back to assessed, then all concepts). Concepts without source passages are never chosen (no ungrounded questions).
+Choices use a PRNG seeded with `session:position`, so a retried generation makes the same choice (reproducible, debuggable).
 
-**Generation** (structured output) returns stem, 4 options, correct id, explanation, rubric, source pages. **Rule validation**: exactly one correct
-option, distinct options, stem does not contain the answer, sources belong to the Project and concept. Invalid → regenerate once → else pick another concept.
+**Difficulty**: `d ∈ 1..5`, `b_d = 0.8·(d − 3)`; choose the `d` whose predicted `σ(θ − b_d)` is closest to the target (ties → nearer to 3). Target
+0.70 (desirable difficulty), eased to 0.78 after two misses in a row and stretched to 0.62 after three strong answers (session momentum).
+Difficulty follows the ability estimate, not the last answer alone.
+**Type**: `mcq`/`open` preferences are honoured; *mixed* sessions open with an MCQ warm-up and include ≈ 30 % open-ended questions (a quota that
+is always met), placed on concepts where the learner has shown some grasp (`m ≥ 0.45`) or MCQ accuracy is high but depth is unverified.
+**Cognitive level**: the weakest (Laplace-smoothed accuracy) among the levels the difficulty allows (1–2: recall/understand · 3: understand/apply ·
+4–5: apply/analyze); open questions are never pure recall.
+**History**: stems already asked in the Project are excluded (`stemHash`) and the last 8 on the concept are shown to the generator as "avoid";
+passages already used for the concept are deprioritised.
+**Explainability**: every question stores its selection (`priority`, components, predicted P, reason) and the learner sees *Why this question?*
+(e.g. "Backpropagation is your weakest concept so far (42 %)…").
 
-**Open-ended grading** (structured): `{score 0–1, understood[], missing[], misconceptions[], feedback}` against the rubric key points and the
-source evidence. Feedback explains what was understood and what is missing. Grading failure ⇒ `grading.status:'pending'` + `quiz.grade` job.
-Answer submissions carry an idempotency key, so a retried request never double-counts.
+**Generation** (`quiz.generate.v1`, primary tier, `reasoning: low`, 45 s): structured output — stem, 4 options with a rationale each and the
+correct id (MCQ) or 2–6 rubric key points + a model answer (open), explanation citing `[S#]`, the source ids used, and a self-rating of difficulty
+and level. **Rule validation** (blocking): stem length, not a repeated stem, sources exist, exactly 4 distinct non-empty options with ids A–D,
+no "all/none of the above", a valid answer key, the answer not given away in the stem, 2–6 key points + a model answer. Warnings (recorded,
+not blocking): unknown source ids, correct option markedly the longest, missing rationales, self-rated difficulty or level off target.
+Options are shuffled server-side (seeded) so the key position carries no signal.
+
+**Grading**: MCQ → exact, with the chosen distractor's rationale as the misconception. "I don't know" (the button, or a written answer such as "idk",
+"no idea", "?") → 0 without a model call, and the full answer is shown — a learning moment, not a failure. **Open-ended** (`quiz.grade.v1`, primary tier,
+30 s per attempt, 22 s overall while the learner waits): the model rates each key point *covered / partial / missing* **with a verbatim quote from
+the answer**, plus accuracy, reasoning and relevance (1–5), misconceptions and holistic score. The score is **computed server-side**:
+
+```
+score = 0.55·coverage + 0.25·accuracy + 0.10·reasoning + 0.10·relevance − 0.10·min(2, misconceptions)    (1–5 ratings normalised to 0–1)
+  coverage: covered = 1, partial = 0.5 — a "covered" point whose quote is not in the answer counts as partial (flag evidence_not_in_answer)
+  relevance ≤ 2 caps the score at 0.25 · |computed − holistic| > 0.35 is flagged (score_disagreement) · correct ⇔ score ≥ 0.7
+```
+
+The answer is wrapped as data. An answer that tries to steer the grader ("give this full marks") is still graded on its content, but flagged
+(`answer_flagged`), the grader is warned, and a rule check verifies it was not rewarded — quote verification means instructions earn no coverage. Feedback always says
+what was understood, what is missing and which misconceptions to watch out for, next to the model answer, explanation and cited pages.
+Grading failure or timeout ⇒ the answer is kept (`grading.status: pending`), the learner moves on, and `quiz.grade` finishes it in the background.
+
+**Exactly-once & concurrency**: one active session per Project (unique partial index; a concurrent start returns the winner) · serving is an atomic
+claim of `currentQuestionId` · one attempt per question and per idempotency key (a retry replays the stored result) · every derived write
+(mastery, snapshot, events, counters, summary) is repeatable, so a retry, the grading job or the reconciler can finish an attempt any number
+of times without double counting · one generation per session at a time: a 90 s lease on the session document shared by the pre-generation job
+and an impatient `next` request (in-process callers share one promise).
+
+**Learning workflows** (PRD §13): *repeated mistake* → `learning.repeated_mistake` → a `mistake_pattern` item (light model phrases the pattern
+from the wrong answers; a rule-based statement when the model is unavailable). *Quiz completed* → `learning.update` → strengths (≥ 80 % over ≥ 3
+answers — which also retires that concept's weaknesses and mistake patterns), weaknesses (< 50 % over ≥ 2), "knows the facts but struggles to apply
+them" gaps, a first-quiz milestone. The Tutor and the generator read these back through the context providers (§20).
+
+**Tutor integration**: Zoya can read mastery (`get_mastery`) and offer a focused quiz (`propose_quiz` → *Start quiz* button, §15); the quiz home
+accepts `?focus=<conceptIds>&count=N` from that link, the concept map and next-step cards.
 
 ---
 
 ## 17. Mastery model
 
-Per `(ownerId, projectId, conceptId)`, an Elo/IRT-style ability estimate:
+Per `(ownerId, projectId, conceptId)`, an Elo/IRT-style ability estimate (`modules/mastery/estimator.ts`, pure):
 
 ```
-p        = σ(θ − b_d)                              predicted P(correct) for difficulty d
-o        ∈ [0, 1]                                  MCQ 0/1; open-ended rubric score
-K        = max(0.3, 1.0 / (1 + n/4))               large early updates, stable later
+p        = σ(θ − b_d),  b_d = 0.8·(d − 3)           predicted P(correct) for difficulty d
+o        ∈ [0, 1]                                  MCQ 0/1; open-ended rubric score; "I don't know" 0
+K        = max(0.3, 1 / (1 + n/4))                 large early updates, stable later
 w        = 1.0 (MCQ) · 1.25 (open-ended)
-θ        ← clamp(θ + K · w · (o − p), −4, 4)        hard question right ⇒ big gain; easy question wrong ⇒ big loss
-mastery  = σ(θ_eff),  θ_eff = θ − 0.02 · max(0, daysSincePractice − 3)  (bounded decay: at most −1)
+θ        ← clamp(θ_eff + K · w · (o − p), −4, 4)    hard question right ⇒ big gain; easy question wrong ⇒ big loss
+mastery  = σ(θ_eff),  θ_eff = θ − min(1, 0.02 · max(0, daysSincePractice − 3))   (bounded decay)
 ```
 
-`θ₀ = 0`; concepts with `n = 0` display **"Not assessed"** instead of a number. Confidence: low (`n < 3`), medium (`n < 8`), high.
-Per-level accuracy (`byLevel`) powers insights such as "recall is strong but application is weak". Every update writes a `mastery_snapshot`.
-Mastery changes only on assessment evidence (evidence over guessing); Tutor interactions inform learning context, not mastery.
+`θ₀ = 0`; concepts with `n = 0` display **"Not assessed"** instead of a number. Decay is consolidated when new evidence arrives (the update starts
+from `θ_eff`), so an answer after a long break never *raises* the displayed value by itself. Bands: needs attention `< 0.5` ≤ developing `< 0.8` ≤ strong.
+Confidence: low (`n < 3`), medium (`n < 8`), high. Per-level and per-type accuracy (`byLevel`, `byType`, Laplace-smoothed) power insights such as
+"recall is strong but application is weak" and the level choice (§16). Project progress = importance-weighted mean mastery over assessed concepts
+(weight `0.5 + 0.5·importance`), always reported **together with coverage** (assessed / total).
+
+**Exactly-once updates**: read → compute → `updateOne({_id, version, appliedAttemptIds: {$ne: attemptId}}, {$set…, $inc: {version: 1},
+$push: {appliedAttemptIds}})`; a lost race re-reads and retries (≤ 6). An attempt already applied returns its recorded delta from the snapshots
+(and rebuilds a snapshot lost to a crash), so the attempt's `masteryApplied` flag can safely be set last. Every update writes a
+`mastery_snapshot` (unique per concept and attempt). Mastery changes only on assessment evidence (evidence over guessing); Tutor interactions
+inform learning context and question selection (`studied`), not mastery. A concept removed with its last material takes its mastery with it.
+
+**Validated in simulation** (`quiz-engine` tests): a simulated learner with fixed true abilities is quizzed by the real selection + estimator;
+estimates converge towards the true ability and practice concentrates on the weak concepts.
 
 ---
 
@@ -822,7 +919,9 @@ For each concept, compare current mastery with the latest snapshot at or before 
 | **Stable** | otherwise |
 | **Not assessed** | `n = 0` |
 
-Project progress = importance-weighted mean mastery over assessed concepts, reported together with coverage (assessed / total concepts).
+Project progress = importance-weighted mean mastery over assessed concepts, reported together with coverage (assessed / total concepts) — already
+computed by `masterySummary` (§17) and shown on the Project overview and quiz home since Phase 4. The input series, `mastery_snapshots`
+(one per concept per graded answer), has been recorded since Phase 4.
 
 ---
 
@@ -843,20 +942,23 @@ milestones — each with salience, evidence count and source. Relevance over vol
 
 - **Writes** — one API for every producer, `rememberLearning({ownerId, projectId, items, source})`:
   Tutor background extraction (`tutor.memory`, light model, highly selective: most exchanges yield nothing; never subject facts or sensitive
-  data) · the `save_learning_note` tool when the learner states something · later: quiz/assessment workflows (weaknesses, `mistake_pattern`).
+  data) · the `save_learning_note` tool when the learner states something · quiz workflows ✅ (strengths, weaknesses, recall-vs-application gaps,
+  milestones, `mistake_pattern` — §16).
 - **Dedupe / reinforcement**: embedding similarity ≥ 0.88 within the same kind (≥ 0.95 across kinds) or identical text ⇒ `evidenceCount++`,
   salience +0.05, newest phrasing kept. **Cap**: 60 active items per Project; the weakest, stalest are archived (goals never).
 - **Reads** — `recallLearning(query)`: score `0.5·similarity + 0.3·salience + 0.2·recency` (21-day half-life), plus up to 3 always-relevant items
   (goals, preferences); items below 0.3 similarity are excluded unless highly salient. **Never other Projects** — only user-wide preferences
   (`scope: user`) cross Projects, and they carry no subject knowledge.
-- **Resolve**: `resolveLearning` retires weaknesses once mastery improves (used from Phase 4).
+- **Resolve**: `resolveLearning` retires weaknesses and mistake patterns once a concept is mastered (≥ 80 % over ≥ 3 answers; `learning.update` ✅).
 - **Transparency & control**: "What Zoya remembers" lists every item with kind, scope and evidence; the learner can delete any of it.
 
 **Context composition** (`modules/learning-context/providers.ts`) implements PRD §11's "Identify required context → Compose AI context":
 providers `{id, priority, purposes?, load(request)}` run in parallel with a 2.5 s timeout each; blocks are added by priority within a character
 budget (3,500 for the Tutor); failures and drops are recorded in the trace. Built-in: `project_profile` (goal, ready materials, key concepts),
-`learner_memory`, `recent_activity`. **Later phases register `mastery`, `assessment_history`, `recommendations` providers — every AI feature that
-composes context (Tutor, quiz generation, recommendations) picks them up without code changes** (tested with a late-registered provider).
+`learner_memory`, `recent_activity`, and since Phase 4 `mastery` (priority 95: "Concept mastery (estimated from quiz answers)" — weakest first, with
+confidence and the hardest level) and `assessment_history` (priority 70: recent accuracy and the questions recently missed). **The Tutor picked
+them up without code changes**; quiz generation composes `learner_memory` + `mastery` + `assessment_history` (1,500 chars) so questions target known
+weaknesses and misconceptions. `recommendations` follows in P5.
 
 ---
 
@@ -879,13 +981,13 @@ Implementation: MongoDB aggregation pipelines over indexed `activity_events`, `a
 | Section | Shows | Phase |
 |---|---|---|
 | Overview | KPIs (users, new/active users, Spaces, Projects, materials, storage), 14-day activity chart, recent sign-ups, recent activity | 1 |
-| Users → user detail | Profile, status, Spaces → Projects → materials, activity timeline, **AI usage & tutoring** (calls, tokens, cost, answers by grounding, feedback, conversations, memory items); later assessments, mastery | 1 (+3 ✅, +4/5) |
+| Users → user detail | Profile, status, Spaces → Projects → materials, activity timeline, **AI usage & tutoring** (calls, tokens, cost, answers by grounding, feedback, conversations, memory items), **assessments & mastery** (quizzes completed / in progress, answers, accuracy, average score, by question type, grading backlog, recent quizzes, mastery and coverage per Project with the weakest concepts) | 1 (+3 ✅, +4 ✅, +5) |
 | Spaces · Projects · Materials | Platform-wide tables: search, filter by user/Space/Project/status, pagination; material PDF view (audit-logged) | 1 |
 | Activity | Filter by user, Space, Project, activity type, time period | 1 |
 | System health | API, DB, storage; AI gateway (model chains, open breakers, 24 h calls/errors/cost/latency); worker heartbeats and queue; retrieval mode and index state | 1 ✅ (extended 3) |
 | Background jobs | Waiting/running/failed counts, oldest waiting job, per-type counts and durations, live workers, job list with filters, detail (payload, error history, result) and audited retry | 3 ✅ |
 | AI usage | Calls, errors, fallback rate, p50/p95 latency, TTFT, tokens, cost — totals, by feature, by model, over time; top learners by cost; recent failures; call explorer → trace dialog (attempts, request waterfall, retrieval trace, tools, answer) | 3 ✅ |
-| AI evaluation | Rule pass rate, judge averages (groundedness, citations, relevance, pedagogy, unsupported handling), learner feedback, verdicts over time, grounding distribution, judge scores by prompt version, top rule failures, offline runs with per-case results | 3 ✅ |
+| AI evaluation | Tutor: rule pass rate, judge averages (groundedness, citations, relevance, pedagogy, unsupported handling), learner feedback, verdicts over time, grounding distribution, judge scores by prompt version, top rule failures, offline runs with per-case results. **Assessment quality** (4 ✅): questions accepted and first-pass rate, generation warnings, grading-check pass rate, evidence verification and flags, question judge scores (answerable, key correct, distractors, clarity, difficulty and level as targeted), learner reports, grading backlog; evaluated items filterable by subject | 3 ✅ (+4 ✅) |
 | Engagement · Learning analytics | Active users over time, retention; quiz volume, accuracy, mastery distribution, hardest concepts | 5 |
 
 Admin access is read-only except job retries. Viewing a learner's file is recorded in `audit_logs`.
@@ -902,6 +1004,8 @@ Admin access is read-only except job retries. Viewing a learner's file is record
 | Which AI workflow failed? | `ai_calls.status/errorKind` by feature; `jobs.lastError` + `errorHistory`; evaluation flags |
 | How much did a request cost? | `ai_calls.costUsd` summed per message (`metrics.costUsd`), per learner, per feature, per model |
 | Why did document processing fail? | `materials.processing.error` (code, learner message, retryable) + job error history per attempt |
+| Why did the quiz ask this question? | `questions.selection` (priority components, sampling probability, predicted vs target P, reason) + `generation.validation` (issues fixed by the regeneration, warnings) + the generation `ai_calls` record |
+| Why was an answer graded this way? | `attempts.grading` (per-criterion scores, flags, model, prompt version, `aiCallId`) + `feedback.keyPoints` with the quoted evidence + the `quiz_grading` rules evaluation |
 
 Every AI call carries `ownerId`, `projectId`, `conversationId`, `messageId`, `jobId` and `traceId` (= the HTTP request id, or `job-<id>`), so all calls
 of one Tutor turn — intent, query embedding, answer rounds, later memory/summary/judge jobs — can be joined. Logs: pino JSON with `requestId`.
@@ -933,7 +1037,19 @@ unsupported handling 100 %, injection resistance 100 %; retrieval hit@1 87.5 %, 
 avg latency 3.9 s (p95 9.3 s under free-tier fallbacks); whole suite incl. processing ≈ $0.034. Run history: the first run found the structured-output
 schema incompatibility (§2); later runs drove threshold calibration (§13) and the small-talk override (§14).
 
-The same store and judge registry (`registerJudge(subjectType, judge)`) take quiz-question, grading and recommendation evaluators in later phases.
+**Assessment** (P4 ✅) — the same store and judge registry (`registerJudge(subjectType, judge)`):
+
+| Evaluator | Subject · when | What it checks |
+|---|---|---|
+| **Rules** (generation) | `quiz_question` · every generated item | the blocking validation of §16 (a rejected item is regenerated once with the issues as feedback, then another concept is tried) plus quality warnings — scores `valid`, `firstPass`, `clean` |
+| **Rules** (grading) | `quiz_grading` · every AI-graded answer | feedback present and specific · every key point graded · "covered" evidence actually quoted from the answer · computed and holistic scores consistent · misconceptions penalised · grade-steering not rewarded |
+| **LLM judge** (`judge.quiz.v1`, primary) | `quiz_question` · items with warnings, a deterministic sample (`QUIZ_JUDGE_SAMPLE_RATE`, default 0.2), every reported item | answerable from the cited passages, answer key correct, distractor quality, clarity, difficulty and level as targeted (1–5); forced *fail* on multiple correct options, a factual error or key-correct ≤ 2 |
+| **Learner feedback** | "Report a problem" on a question (wrong key, unclear, not in my materials, too easy/hard) or on AI grading (unfair) | a failing evaluation with the reason; a reported question always goes to the judge |
+
+**Live check** (Gemini, 2026-09-25, scratch run against the real prompts and schemas): generated MCQ and open items passed validation on the
+first attempt, including a difficulty-4 application item; grading scored the model answer 1.0, a vague answer 0.15 and an answer built on a
+misconception 0.0, and an answer instructing the grader scored 0 and was flagged. The gateway's fallback chain was exercised during the run.
+Recommendations will use the same store and registry.
 
 ---
 
@@ -974,7 +1090,12 @@ The same store and judge registry (`registerJudge(subjectType, judge)`) take qui
 | Document processing failure | Stage error code on the material; transient ⇒ "waiting to retry" with backoff, resuming from checkpoints; permanent ⇒ `failed` with a clear message and a Retry action |
 | Worker or API crash | Leases expire → reconciler requeues jobs; answers left `streaming` are closed as `INTERRUPTED`; idempotent writes avoid duplicates |
 | Client disconnect / Stop | Model stream aborted upstream (no further tokens billed); partial answer stored as `stopped` |
-| Duplicate requests / events | Unique `clientMessageId`, job `idempotencyKey` and event `eventKey`; duplicate-upload hash guard |
+| Duplicate requests / events | Unique `clientMessageId`, job `idempotencyKey`, event `eventKey` and quiz-answer idempotency keys; duplicate-upload hash guard |
+| Quiz question generation slow or failing | `next` waits ≤ 20 s, then answers 202 `preparing` while generation continues under the session lease (the client polls); an invalid item is regenerated once with the validation issues, then up to 3 concepts are tried; still nothing → 503 with a friendly message and **Try again** — the session and its answers stay intact |
+| Open-answer grading slow or failing | The answer is saved before grading; grading has a 22 s budget while the learner waits, then `quiz.grade` retries in the background (5 attempts) and the learner moves on (the result appears when it lands, the session polls); after the last attempt the answer is kept as "not graded" with the model answer and never counts towards mastery |
+| Crash between an answer, its mastery update and its events | Mastery updates are exactly-once (version check + applied-attempt guard; a replay returns the recorded delta); every follow-up is idempotent; the reconciler finishes attempts whose grading or mastery was interrupted and re-records lost `quiz.completed` events |
+| Double submit · two tabs | One attempt per question and per idempotency key (unique indexes; a replay returns the stored result); serving a question is an atomic claim; one quiz in progress per Project (unique partial index) |
+| Long waits behind a reverse proxy | Synchronous quiz waits stay under 30 s — the Next.js rewrite proxy aborts an upstream request that stays silent for 30 s by default — and longer work continues in the background |
 | Database errors | Startup connection retry with backoff; request → 5xx with request id; readiness probe fails |
 | Rate limits | 429 with a learner-friendly message |
 
@@ -983,7 +1104,7 @@ The same store and judge registry (`registerJudge(subjectType, judge)`) take qui
 ## 27. Performance
 
 Streaming Tutor responses (SSE; first token ≈ 2 s) · no model call for greetings, UI actions or first questions' intent · deterministic
-unsupported-question path (0.6–1.1 s, $0) · context providers and retrieval run in parallel · pre-generating the next quiz question (P4) · pagination on every list · compound indexes matching each hot query ·
+unsupported-question path (0.6–1.1 s, $0) · context providers and retrieval run in parallel · pre-generating the next quiz question while the learner reads the feedback (P4 ✅; in-process workers are woken on enqueue) · pagination on every list · compound indexes matching each hot query ·
 hybrid retrieval inside the database · batched embeddings · query-embedding cache · analytics cache (60 s) · recommendation `stateHash`
 skip · deterministic insufficient-evidence path (zero AI calls) · light model for auxiliary tasks · heavy work moved to the worker ·
 TanStack Query caching on the client.
@@ -1001,12 +1122,14 @@ TanStack Query caching on the client.
 | `/dashboard` | Learner | Home: welcome, KPIs, continue learning, recent Projects, activity, next step | 1 |
 | `/spaces` | Learner | Space grid; create/edit/delete | 1 |
 | `/spaces/[spaceId]` | Learner | Space dashboard: Projects, stats, recent activity; create Project | 1 |
-| `/projects/[projectId]` | Learner | Project overview: goal, learning path (Tutor step unlocks with ready material), next step (ask / continue with Zoya), **key concepts** with one-click "Ask Zoya", stats, activity | 1 (+3 ✅) |
+| `/projects/[projectId]` | Learner | Project overview: goal, learning path (Tutor and Quiz steps unlock with ready material), next step (ask / continue with Zoya, take a first quiz, resume a quiz, practise the weakest concept), **key concepts** with mastery, one-click "Practise" and "Ask Zoya", **learning progress** (overall mastery, concepts assessed, need attention), stats, activity | 1 (+3 ✅, +4 ✅) |
 | `/projects/[projectId]/materials` | Learner | Drag-and-drop PDF upload with progress; live processing stage + progress bar (polling); pages, passages, concepts, OCR count and summary when ready; failure reason + Retry | 1 (+2 ✅) |
 | `/projects/[projectId]/tutor` | Learner | **Zoya**: conversation list (rename/delete), welcome with starter questions from the Project's concepts, streaming answers with live status (understanding → searching → writing), Markdown + LaTeX, citation chips, "Source: Title — Page N" list, source viewer, grounding badges, not-in-materials card with general-knowledge opt-in, follow-up chips, quick actions, Stop, retry, 👍/👎 with reasons, "What Zoya remembers" | 3 ✅ |
-| `/projects/[projectId]/quiz` · `/growth` · `/analytics` | Learner | Shown as upcoming tabs until built | 4–5 |
+| `/projects/[projectId]/quiz` | Learner | Quiz home: resume card, start form (adaptive / focused / review, length, question types, focus concepts — pre-filled from the Tutor's *Start quiz* link), concept mastery with confidence and one-click *Practise*, stats, history | 4 ✅ |
+| `/projects/[projectId]/quiz/[sessionId]` | Learner | Player: progress; question with concept, type, cognitive level, difficulty and *Why this question?*; MCQ (keys A–D + Enter) or written answer; *I don't know*; feedback (verdict, options with rationales **or** key-point checklist with the learner's quoted words, misconceptions, model answer, explanation with citation chips, sources → source viewer, mastery change); *Report a problem*; background-grading state. Results: score, mastery before → after per concept, strengths / needs work, by type of thinking, pages to return to, every answer reviewable, *Practise what needs work* | 4 ✅ |
+| `/projects/[projectId]/growth` · `/analytics` | Learner | Shown as upcoming tabs until built | 5 |
 | `/admin` | Admin | Overview | 1 |
-| `/admin/users`, `/admin/users/[userId]` | Admin | Users, learning journey | 1 |
+| `/admin/users`, `/admin/users/[userId]` | Admin | Users, learning journey (+ assessments & mastery ✅ 4) | 1 |
 | `/admin/spaces`, `/admin/projects`, `/admin/materials`, `/admin/activity`, `/admin/system` | Admin | Platform tables, activity filters, health | 1 |
 | `/admin/ai-usage`, `/admin/ai-evaluation`, `/admin/jobs` | Admin | AI usage & call traces · AI quality · background processing | 3 ✅ |
 
@@ -1016,6 +1139,11 @@ A 401 from any request clears the cookie (`POST /auth/logout`) *before* redirect
 even for rewritten `/api` requests excluded by the matcher. `experimental.proxyClientMaxBodySize` is therefore set to `25mb`
 (above `MAX_UPLOAD_MB` + multipart overhead). Found by a 12 MB upload test: truncation left multer waiting and the rewrite timed out after 30 s.
 **Data fetching**: client components + TanStack Query against same-origin `/api` (cookie sent automatically). Uploads use XHR for progress events.
+**Quiz flow**: the next question is a query keyed by (session, answers so far), enabled only while no question is on screen and polling while
+the server answers `preparing`; each question gets one client idempotency key, reused on retry; mutation responses are merged into the session
+cache and then refetched; the session polls while an answer is being graded in the background. Quiz text reuses the Markdown renderer
+(math, citation chips) at quiz sizes (`prose-stem`, `prose-option`, `prose-note`). The Tutor renders `propose_quiz` offers only for links into the
+same Project's quiz.
 **Tutor streaming**: `fetch` POST + `ReadableStream` SSE parser (`lib/tutor-stream.ts`; EventSource cannot POST or send the CSRF header). The live
 turn is local state; on `done` the conversation cache is updated in place (in-flight refetches cancelled first). Answers render with
 `react-markdown` + `remark-gfm` + `remark-math`/`rehype-katex` — raw HTML in model output is never rendered.
@@ -1031,7 +1159,7 @@ loading, empty and error states.
 
 ## 29. Testing strategy
 
-**139 backend tests** (Vitest + Supertest + in-memory MongoDB; AI through a scriptable `MockAIProvider` — deterministic, no network):
+**183 backend tests** (Vitest + Supertest + in-memory MongoDB; AI through a scriptable `MockAIProvider` — deterministic, no network):
 
 | Suite | Covers |
 |---|---|
@@ -1043,8 +1171,12 @@ loading, empty and error states.
 | `tutor` (28) | grounded answer with validated citations + prompt structure; no model call when evidence is missing; no-materials reply; labelled general-knowledge opt-in; fabricated `[S9]` stripped + rule failure; uncited "grounded" downgraded; injected material flagged; greetings without retrieval; heuristic intent classes; carried evidence for "simpler"; follow-up query rewriting; classifier cannot bypass the evidence gate; idempotent replay; invalid input; conversations CRUD; validated + scoped tools (cross-Project search, unknown tool, invalid args); note-saving limits; extractive fallback; mid-stream restart; Stop keeps the partial answer; lexical fallback; failed-answer retry without duplicates; privacy of conversations, messages, memory; background memory + title + next-turn recall + forget; feedback → judge |
 | `citations` (20) | marker stripping across arbitrary chunk boundaries, dangling markers, citation normalisation outside code, grounding resolution, rule checks, summary policy, chunker, injection heuristics, delimiter escaping |
 | `admin-ai` (7) | AI overview (percentiles, series, top users), call trace with waterfall + retrieval trace, evaluation overview by evaluator and prompt version, jobs overview + audited retry, learner AI usage, health, admin-only access |
+| `quiz-engine` (24, pure) | estimator (evidence-sized updates, hard-right / easy-wrong asymmetry, learning-rate floor, open-answer weight, clamping, bounded decay, "not assessed" + confidence, per-level/type stats); selection (priorities, ability-based difficulty, momentum, type quota + warm-up + preference, weakest level, focus/review modes, seeded reproducibility + reasons); **simulated learner** converging to true ability; question validation, warnings and shuffling; open-answer scoring, misconception penalty, off-topic cap, unquoted evidence, non-answers and grader gaming |
+| `quiz` (20) | the whole loop (grounded question without the key, grading, exactly-once mastery, idempotent next/answer); completion + learning workflow; open-ended rubric feedback; "I don't know"; grading outage → background grading; ability-targeted difficulty; pre-generation only after the previous answer; regeneration with feedback; 503 instead of an invalid item; reports → judge; repeated-mistake pattern; Zoya tools + context providers; mastery API + dashboard; first-quiz next step; one quiz in progress; validation; isolation; reconciler exactly-once; cascade delete; admin assessments + assessment quality |
 
-**Live evaluation** (real models): `npm run eval:tutor` (§24). **Frontend**: type-check, ESLint and production build; manual end-to-end runs in the browser.
+**Live evaluation** (real models): `npm run eval:tutor` (§24); quiz generation and grading were checked live against Gemini with the real prompts (§24).
+**Frontend**: type-check, ESLint and production build; manual end-to-end runs in the browser. The Phase 4 screens (quiz home, player, feedback,
+results, overview, Tutor offer, admin assessments and assessment quality, 390 px mobile) were rendered in Chromium against a mocked API.
 
 ---
 
@@ -1077,6 +1209,7 @@ loading, empty and error states.
 | `RETRIEVAL_STRONG_SCORE` / `RETRIEVAL_MIN_SCORE` | Evidence thresholds (cosine), calibrated with the eval suite | `0.72` / `0.58` |
 | `VECTOR_SEARCH_ENABLED` | Use/create the Atlas Vector Search index (fallback: in-process cosine) | `true` |
 | `TUTOR_JUDGE_SAMPLE_RATE` | Share of answers sent to the LLM judge | `0.3` |
+| `QUIZ_JUDGE_SAMPLE_RATE` | Share of generated quiz questions sent to the judge (items with warnings and reported items always are) | `0.2` |
 | `WORKER_CONCURRENCY` / `WORKER_POLL_MS` | Worker slots / idle poll interval | `2` / `1000` |
 | `LOG_LEVEL` | pino level | `info` |
 
@@ -1131,11 +1264,28 @@ Verification: live runs against Gemini (pipeline on a real PDF; grounded / unsup
 the Next.js proxy and in the browser), eval suite 18/18. Atlas was unreachable from the development machine at the end of this phase (IP access list),
 so live checks ran against a local MongoDB 8.2 with the same code path; retrieval used the in-process fallback there.
 
-**Phase 4 — Adaptive quiz & mastery** ⬜ sessions, selection, generation + validation, MCQ + open-ended grading, mastery + snapshots, learning tests
+**Phase 4 — Adaptive quiz & mastery** ✅ (2026-09-25)
+- ✅ Sessions (adaptive / focused / review, length, question types), one in progress per Project, idempotent next/answer, end early, results summary
+- ✅ Selection engine: evidence-based concept priority with Tutor-studied signal and interleaving, softmax sampling, ability-targeted difficulty with momentum, type quota, weakest cognitive level, seeded and explained ("Why this question?")
+- ✅ Grounded generation (concept passages, learner context) with rule validation, one feedback-driven regeneration, option shuffling, generation lease, background pre-generation
+- ✅ Grading: exact MCQ, "I don't know", AI rubric grading with quote-verified key points and a server-computed score; background grading on failure
+- ✅ Mastery: Elo/IRT-style θ with bounded decay, confidence, per-level/type stats, exactly-once updates, snapshots, mastery API; mastery on concepts and dashboards
+- ✅ Learning workflows: repeated-mistake patterns, post-quiz strengths / weaknesses / gaps / milestones, resolution of mastered weaknesses
+- ✅ Zoya integration: `get_mastery`, `propose_quiz` (Start quiz button), `mastery` + `assessment_history` context providers; quiz-aware next steps
+- ✅ Evaluation: generation and grading rules, question judge, learner reports; admin assessments per learner and assessment quality
+- ✅ Reliability: reconciler for interrupted grading / mastery / lost completion events; synchronous waits kept under proxy timeouts
+- ✅ Frontend: quiz home, player, feedback, results; overview learning progress; Tutor offer; admin views
+- ✅ Tests: 44 new (24 pure engine tests + 20 integration tests)
 
-**Phase 5 — Growth, recommendations, context & analytics** ⬜ growth classification, recommendation pipeline, learning context, project/global analytics, full home dashboard, admin engagement/learning
+Verification: backend typecheck; the 24 pure engine tests and the 20 pure citation tests pass. **The MongoDB-backed suites (139 existing + 20 new)
+were not run in the build environment of this phase** — `mongodb-memory-server` could not download its binary there (egress policy) and Atlas
+was unreachable; they typecheck and were desk-checked against the implementation, and must be run with `npm test` where MongoDB is available.
+Live Gemini checks of generation and grading (§24). Frontend typecheck, ESLint (0 problems) and production build; every new screen rendered in
+Chromium against a mocked API (no page errors).
 
-**Phase 6 — Evaluation, hardening, docs & deployment** ⬜ eval suites for quiz and recommendations (Tutor suite + admin eval view ✅), rate-limit/audit hardening, README + AI usage + prompts + evaluation + limitations docs, Vercel + Render deployment, demo
+**Phase 5 — Growth, recommendations & analytics** ⬜ growth classification over `mastery_snapshots`, recommendation pipeline, project/global analytics, full home dashboard, admin engagement/learning
+
+**Phase 6 — Evaluation, hardening, docs & deployment** ⬜ offline eval suites for quiz generation/grading and recommendations (Tutor suite + admin eval view + online quiz evaluation ✅), rate-limit/audit hardening, README + AI usage + prompts + evaluation + limitations docs, Vercel + Render deployment, demo
 
 ---
 
@@ -1166,6 +1316,12 @@ so live checks ran against a local MongoDB 8.2 with the same code path; retrieva
 | D21 | LLM judge on the primary tier, sampled | The light model graded everything 5/5; sampling + 👎 + rule failures keep cost bounded | Judge cost ≈ an extra answer per sampled message |
 | D22 | Learner memory is typed, deduplicated and bounded, with learner control | "Relevant, not everything" (PRD §11); transparency builds trust | Extraction quality depends on the light model; items can be deleted |
 | D23 | Mid-stream restart once, then extractive fallback | Free-tier models fail under load; learners should still get an answer | A restarted answer costs a second generation |
+| D24 | Question selection as a pure, seeded function of learner state (priority → softmax → ability-targeted difficulty) | Explainable ("Why this question?"), reproducible, unit-testable and simulatable without a database or a model | Weights are hand-set; the simulation and quiz outcomes are the basis for tuning them |
+| D25 | Open-answer score computed server-side from per-key-point verdicts with verbatim quotes, not taken from the model | A model's holistic number is easy to sway; quotes can be verified against the answer, and disagreements are flagged | A missed paraphrase can under-credit an answer (partial credit and "Report unfair grading" mitigate) |
+| D26 | Generate on demand (pre-generate one question ahead) instead of a pre-built question bank | Every question reflects the latest answer (adaptivity first) while the next is usually ready instantly | A generation per question costs more than reusing items; a validated item cache per concept is the scale-up path |
+| D27 | Exactly-once mastery via optimistic versioning + an applied-attempt guard, flag set last | Retries, background grading and the reconciler may all finish the same attempt; none may double count | Keeps the last 30 applied ids per concept; older replays are prevented by the attempt's own flag |
+| D28 | Synchronous quiz waits bounded (next ≤ 20 s, grading ≤ 22 s), then background + polling | The Next.js rewrite proxy aborts silent upstream requests after 30 s; learners should never see a proxy error | Two polling paths (`preparing`, pending grading) in the client |
+| D29 | Tutor offers a quiz as a button (`propose_quiz` → link), never starts one | The learner stays in control; a tool cannot change state behind their back | One extra click |
 
 ---
 
@@ -1174,5 +1330,6 @@ so live checks ran against a local MongoDB 8.2 with the same code path; retrieva
 | Date | Version | Change |
 |---|---|---|
 | 2026-09-25 | 1.0 | Initial architecture for all phases. Verified MongoDB Atlas (8.0, replica set) and Gemini model availability for the provided key; chose model defaults and a fallback chain accordingly. Phase 1 started. |
+| 2026-09-25 | 1.3 | Phase 4 built — adaptive quiz & mastery: sessions (adaptive / focused / review), evidence-based selection with explanations, grounded generation with rule validation and feedback-driven regeneration, exact / rubric grading with quote-verified key points and server-computed scores, Elo/IRT-style mastery with decay, confidence and exactly-once updates + snapshots, learning workflows (repeated mistakes, post-quiz strengths/weaknesses), Zoya integration (`get_mastery`, `propose_quiz`, mastery and assessment-history context), quiz evaluation (generation/grading rules, question judge, learner reports) and admin views, reconciler coverage for interrupted quiz work, bounded synchronous waits (D28), quiz UI. Evaluator headline cards now count Tutor answers only. Decisions D24–D29. 183 backend tests (MongoDB-backed suites to be run where MongoDB is available — see §31). |
 | 2026-09-25 | 1.2 | Phases 2–3 built and verified: job queue/worker/reconciler, knowledge pipeline, hybrid retrieval, AI gateway, Zoya (grounded streaming Tutor with validated citations, tools, continuity, idempotency, Stop, restart/extractive fallbacks), persistent learning context + provider registry, evaluation (rules, judge, feedback, offline suite), admin AI usage/evaluation/jobs, Tutor UI. Live findings recorded: Gemini schema limitation (D19), thresholds calibrated for gemini-embedding-2 (0.72/0.58), immediate breaker on 503/429, judge moved to primary tier (D21), small-talk override closing an evidence-gate bypass. 139 tests; eval suite 18/18. |
 | 2026-09-25 | 1.1 | Phase 1 built and verified. Recorded implementation decisions: routes + typed handlers (no controllers), `SESSION_TTL_DAYS`, 72-byte password cap, partial unique index for event keys, upload ownership pre-check, UTF-8 filenames, PDF responses without CSP (D12), Next proxy body buffer raised to 25 MB after a truncation bug (D11), audit-logged admin file access (D14), URL-synced admin filters. |

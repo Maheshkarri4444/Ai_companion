@@ -4,10 +4,10 @@ An AI-powered learning workspace: learners organise study into **Spaces** and **
 AI Tutor, take adaptive quizzes and get evidence-based guidance on what to do next. An **Admin console** gives operators visibility into
 users, learning activity, AI usage and system health.
 
-> **Status — Phases 1–3 complete.** Authentication, the learner workspace, background document processing and the complete AI layer —
-> **Zoya, the grounded AI tutor**, persistent learning context, AI observability and evaluation — are built and tested (139 backend tests;
-> live regression suite 18/18 on Gemini). Adaptive quizzes, mastery, growth and recommendations follow next.
-> The full design, decisions and build status live in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+> **Status — Phases 1–4 complete.** Authentication, the learner workspace, background document processing, the complete AI layer —
+> **Zoya, the grounded AI tutor**, persistent learning context, AI observability and evaluation — and the **adaptive quiz with concept
+> mastery** are built (183 backend tests; live Tutor regression suite 18/18 on Gemini). Growth analysis, recommendations and analytics follow next.
+> The full design, decisions and build status live in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (version 1.3).
 
 ## Stack
 
@@ -92,8 +92,8 @@ npm run lint
 npm run build
 ```
 
-Backend tests run against an in-memory MongoDB (the first run downloads a MongoDB binary) and a scriptable mock AI provider — no network,
-no Atlas data, no model costs.
+Backend tests run against an in-memory MongoDB (the first run downloads a MongoDB binary from `fastdl.mongodb.org`, so that host must be
+reachable) and a scriptable mock AI provider — no Atlas data, no model costs.
 
 ### Live AI regression suite
 
@@ -126,14 +126,29 @@ stage, clear failure reasons and a retry button. Each Project gets a concept map
 - Follow-ups understood in context ("and what if it's too small?"), one-click *Simpler · Example · Test me · Summarize · Revision plan*,
   follow-up suggestions, conversation history with AI titles, Stop, retry, 👍/👎 feedback.
 - Remembers what matters about the learner across sessions (goals, preferences, difficulties) — visible and deletable under "What Zoya remembers".
-- Uses controlled, validated, Project-scoped tools (search materials, read a page, list concepts, check learning state, save a learning note).
+- Uses controlled, validated, Project-scoped tools (search materials, read a page, list concepts, check learning state and mastery, save a
+  learning note, offer a practice quiz — shown as a *Start quiz* button the learner can choose to press).
 - Resilient: model fallback chains with circuit breakers, restart on another model if one fails mid-answer, keyword retrieval if embeddings are down,
   and cited passages if every model is unavailable.
 
-**Admin console**: platform KPIs and activity chart · users with their learning journey and **AI usage** · Spaces, Projects, materials and
+**Adaptive quiz & mastery** (Project → Quiz):
+- Adaptive, focused (chosen concepts) or review (mistakes and concepts due) quizzes of 3–15 questions — multiple choice, written answers or a mix.
+- Each question is written from the learner's own material, checked by rule validation before it is shown, and cites its source pages.
+  The next concept, difficulty and type follow the evidence: weak, uncertain, recently missed or due concepts first, pitched at about a 70 %
+  chance of success — and the learner can see *why this question* was chosen.
+- Written answers are graded against a rubric of key points with quoted evidence: the feedback says what was understood, what is missing and
+  which misconceptions to watch out for, next to a model answer. "I don't know" is a learning moment, not a failure.
+- Mastery per concept (with confidence, "not assessed" until there is evidence, gentle decay without practice) updates after every answer and
+  appears on the Project overview, the concept map and in Zoya's context; results show mastery before → after, strengths, what needs work
+  and the pages to return to.
+- Repeated mistakes and post-quiz strengths/weaknesses flow into the persistent learning context that Zoya uses. Everything is idempotent and
+  recovers from AI outages (answers are kept and graded in the background).
+
+**Admin console**: platform KPIs and activity chart · users with their learning journey, **AI usage** and **assessments & mastery** · Spaces, Projects, materials and
 activity explorers · audit-logged PDF viewing · **AI usage** (calls, errors, fallbacks, p50/p95 latency, tokens and cost by feature/model/time,
 per-call traces with retrieval evidence and the request waterfall) · **AI evaluation** (rule checks on every answer, sampled LLM judge,
-learner feedback, scores by prompt version, offline regression runs) · **Background jobs** (queue, workers, failures, audited retry) ·
+learner feedback, scores by prompt version, offline regression runs, and quiz **assessment quality**: question validity, grading checks,
+question judge, learner reports) · **Background jobs** (queue, workers, failures, audited retry) ·
 live **system health** (API, database, storage, AI gateway, worker, retrieval).
 
 **Security**: bcrypt password hashing, httpOnly session cookies with server-side revocation, CSRF guard, per-user and per-Project data isolation
@@ -143,4 +158,5 @@ validated AI output, rate limits, and admin-only APIs.
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md): system design for every phase, data model, API reference, the AI layer and Tutor pipeline
-  (§12–§15), learning context (§20), observability and evaluation results (§23–§24), security, testing, deployment, build status and decision log.
+  (§12–§15), the adaptive quiz and mastery model (§16–§17), learning context (§20), observability and evaluation results (§23–§24), security,
+  testing, deployment, build status and decision log.

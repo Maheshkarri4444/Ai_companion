@@ -1,11 +1,12 @@
 import { config } from '../config/env';
 import { enqueueJob } from '../jobs/queue';
-import { sha256 } from '../lib/text';
 import { Conversation } from '../models/conversation.model';
 import { Material } from '../models/material.model';
 import { onActivity } from './activity/activity.service';
 import { enqueueJudge } from './evaluation/evaluation.jobs';
+import { sampled } from './evaluation/evaluation.service';
 import { enqueueMaterialProcessing } from './knowledge/knowledge.service';
+import { onQuestionAnswered, onQuizCompleted } from './quiz/learning';
 import { summaryNeeded } from './tutor/tutor.jobs';
 
 /**
@@ -13,13 +14,6 @@ import { summaryNeeded } from './tutor/tutor.jobs';
  * (keys derived from the event subject), so replayed or duplicated events never create duplicate work; the
  * reconciler repairs anything lost if enqueueing itself fails.
  */
-
-/** Deterministic sampling: the same message always gets the same decision, across retries and processes. */
-export function sampled(id: string, rate: number) {
-  if (rate <= 0) return false;
-  if (rate >= 1) return true;
-  return parseInt(sha256(id).slice(0, 8), 16) / 0xffffffff < rate;
-}
 
 export function registerWorkflows() {
   // Material workflow: Upload → Process → Extract concepts → Searchable knowledge → Update Project
@@ -82,4 +76,10 @@ export function registerWorkflows() {
       priority: 0,
     });
   });
+
+  // Repeated-mistake workflow: Repeated mistake → identify pattern → update learning context
+  onActivity('quiz.question_answered', onQuestionAnswered);
+
+  // Learning workflow: Quiz completed → evaluate → (mastery already updated) → detect weakness → learning context
+  onActivity('quiz.completed', onQuizCompleted);
 }

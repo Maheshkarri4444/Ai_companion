@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { Types } from 'mongoose';
 import { getContext } from '../lib/context';
 import { isDuplicateKeyError } from '../lib/errors';
@@ -30,6 +31,12 @@ export interface EnqueueInput {
   priority?: number;
 }
 
+/**
+ * Wakes in-process workers when a job is enqueued, so a learner-facing job (e.g. preparing the next quiz question)
+ * starts at once instead of after the idle poll back-off. Separate worker processes still poll.
+ */
+export const jobSignals = new EventEmitter().setMaxListeners(64);
+
 /** Idempotent: a second enqueue with the same key returns the existing job instead of creating a duplicate. */
 export async function enqueueJob(input: EnqueueInput): Promise<{ job: IJob; created: boolean }> {
   try {
@@ -44,6 +51,7 @@ export async function enqueueJob(input: EnqueueInput): Promise<{ job: IJob; crea
       priority: input.priority ?? 0,
       traceId: getContext()?.requestId ?? null,
     });
+    jobSignals.emit('enqueued', input.type);
     return { job: job.toObject(), created: true };
   } catch (err) {
     if (!isDuplicateKeyError(err)) throw err;

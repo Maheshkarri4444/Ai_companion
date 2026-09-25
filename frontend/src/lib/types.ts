@@ -89,6 +89,10 @@ export interface Concept {
   importance: number;
   chunkCount: number;
   sources: Array<{ materialId: string; materialTitle: string; pages: number[] }>;
+  /** Estimated from quiz answers; null until the concept has been assessed. */
+  mastery: number | null;
+  masteryBand: MasteryBand;
+  evidenceCount: number;
 }
 
 export interface MaterialPageText {
@@ -117,7 +121,11 @@ export type ActivityType =
   | "material.failed"
   | "material.reprocessed"
   | "tutor.answered"
-  | "tutor.feedback";
+  | "tutor.feedback"
+  | "quiz.started"
+  | "quiz.question_answered"
+  | "quiz.completed"
+  | "mastery.updated";
 
 export interface ActivityEvent {
   id: string;
@@ -139,6 +147,16 @@ export type NextStep =
   | { kind: "retry_failed"; projectId: string; projectName: string; failedCount: number }
   | { kind: "ask_tutor"; projectId: string; projectName: string; concept: string | null }
   | { kind: "continue_tutor"; projectId: string; projectName: string; conversationId: string; conversationTitle: string }
+  | { kind: "resume_quiz"; projectId: string; projectName: string; sessionId: string; answered: number; target: number }
+  | {
+      kind: "start_quiz";
+      projectId: string;
+      projectName: string;
+      reason: "first_quiz" | "practice_weak";
+      conceptId: string | null;
+      conceptName: string | null;
+      mastery: number | null;
+    }
   | { kind: "continue_project"; projectId: string; projectName: string };
 
 export interface HomeDashboard {
@@ -160,6 +178,14 @@ export interface ProjectDashboard {
   project: Project;
   space: SpaceSummary | null;
   stats: { materialCount: number; totalBytes: number; totalPages: number; materialsByStatus: StatusCounts };
+  learning: {
+    tutorUsed: boolean;
+    quizzesCompleted: number;
+    activeQuiz: { id: string; answered: number; target: number } | null;
+    questionsAnswered: number;
+    accuracy: number | null;
+    mastery: MasterySummary;
+  };
   recentMaterials: Material[];
   recentActivity: ActivityEvent[];
   nextStep: NextStep;
@@ -214,7 +240,7 @@ export interface TutorMessage {
   sources: TutorSource[];
   citations: TutorCitation[];
   suggestions: string[];
-  toolCalls: Array<{ name: string; ok: boolean; summary: string }>;
+  toolCalls: Array<{ name: string; ok: boolean; summary: string; data?: TutorToolData | null }>;
   feedback: { rating: "up" | "down"; reason: string | null } | null;
   error: { code: string; message: string } | null;
   metrics: { latencyMs: number | null; ttftMs: number | null; model: string | null } | null;
@@ -258,6 +284,9 @@ export interface LearningItem {
   createdAt: string;
 }
 
+/** Structured output of a Tutor tool the UI can act on (e.g. `propose_quiz` → a "Start quiz" button). */
+export type TutorToolData = { kind: "quiz_link"; href: string; label: string } | { kind: string; [key: string]: unknown };
+
 export type TutorStreamEvent =
   | { type: "start"; conversation: Conversation; userMessage: TutorMessage; assistantMessageId: string; replay: boolean }
   | { type: "status"; stage: "understanding" | "retrieving" | "thinking" | "searching" | "writing"; label: string }
@@ -267,6 +296,165 @@ export type TutorStreamEvent =
   | { type: "reset"; reason: string }
   | { type: "done"; message: TutorMessage; conversation: Conversation }
   | { type: "error"; code: string; message: string };
+
+// ── Quiz & mastery ────────────────────────────────────────────────────────
+export type QuizMode = "adaptive" | "focused" | "review";
+export type QuizStatus = "active" | "completed" | "abandoned";
+export type QuestionType = "mcq" | "open";
+export type QuestionTypePreference = "mixed" | "mcq" | "open";
+export type CognitiveLevel = "recall" | "understand" | "apply" | "analyze";
+export type MasteryBand = "not_assessed" | "needs_attention" | "developing" | "strong";
+export type MasteryConfidence = "none" | "low" | "medium" | "high";
+export type OptionId = "A" | "B" | "C" | "D";
+
+export interface MasterySummary {
+  totalConcepts: number;
+  assessedConcepts: number;
+  coverage: number;
+  overallMastery: number | null;
+  needsAttention: number;
+  strong: number;
+}
+
+export interface ConceptMastery {
+  conceptId: string;
+  name: string;
+  description: string;
+  importance: number;
+  mastery: number | null;
+  band: MasteryBand;
+  confidence: MasteryConfidence;
+  evidenceCount: number;
+  correctCount: number;
+  accuracy: number | null;
+  byLevel: Record<CognitiveLevel, { n: number; accuracy: number | null }>;
+  weakestLevel: CognitiveLevel | null;
+  recentOutcomes: number[];
+  lastPracticedAt: string | null;
+  sources: Array<{ materialId: string; pages: number[] }>;
+}
+
+export interface QuizSummary {
+  answered: number;
+  graded: number;
+  pending: number;
+  correct: number;
+  accuracy: number | null;
+  avgScore: number | null;
+  timeMs: number;
+  byConcept: Array<{ conceptId: string; name: string; answered: number; avgScore: number | null; masteryBefore: number | null; masteryAfter: number | null }>;
+  byLevel: Record<CognitiveLevel, { n: number; avgScore: number | null }>;
+  byType: Record<QuestionType, { n: number; avgScore: number | null }>;
+  strengths: string[];
+  needsWork: string[];
+  review: Array<{ materialId: string; materialTitle: string; pages: number[]; conceptName: string }>;
+}
+
+export interface QuizSession {
+  id: string;
+  projectId: string;
+  status: QuizStatus;
+  mode: QuizMode;
+  questionTypes: QuestionTypePreference;
+  focusConceptIds: string[];
+  targetCount: number;
+  servedCount: number;
+  answeredCount: number;
+  gradedCount: number;
+  pendingCount: number;
+  correctCount: number;
+  accuracy: number | null;
+  avgScore: number | null;
+  currentQuestionId: string | null;
+  summary: QuizSummary | null;
+  startedAt: string;
+  completedAt: string | null;
+  lastActivityAt: string;
+}
+
+export interface KeyPointResult {
+  point: string;
+  status: "covered" | "partial" | "missing";
+  evidence: string;
+}
+
+export interface QuizAttempt {
+  id: string;
+  questionId: string;
+  response: { optionId: OptionId | null; text: string | null; skipped: boolean };
+  outcome: number | null;
+  isCorrect: boolean | null;
+  feedback: { summary: string; understood: string[]; missing: string[]; misconceptions: string[]; keyPoints: KeyPointResult[] } | null;
+  grading: { status: "graded" | "pending" | "failed"; method: "exact" | "ai" | "rule" | null; flags: string[] };
+  masteryDelta: Array<{ conceptId: string; name: string; before: number | null; after: number }>;
+  timeMs: number | null;
+  reported: boolean;
+  createdAt: string;
+}
+
+export interface QuizSource {
+  ref: string;
+  materialId: string;
+  materialTitle: string;
+  pageStart: number;
+  pageEnd: number;
+  sectionTitle: string | null;
+  snippet: string;
+  cited: boolean;
+}
+
+export interface QuizQuestion {
+  id: string;
+  sessionId: string;
+  position: number | null;
+  status: "ready" | "served" | "answered" | "discarded";
+  type: QuestionType;
+  difficulty: number;
+  cognitiveLevel: CognitiveLevel;
+  conceptIds: string[];
+  conceptNames: string[];
+  stem: string;
+  options: Array<{ id: OptionId; text: string; rationale?: string }>;
+  selection: { reason: string | null; predictedP: number | null; targetP: number | null; mastery: number | null; evidence: number; explored: boolean };
+  /** The answer key below is only sent once the question is answered or the quiz has ended. */
+  revealed: boolean;
+  correctOptionId: OptionId | null;
+  explanation: string | null;
+  rubric: { keyPoints: string[]; sampleAnswer: string } | null;
+  sources: QuizSource[];
+  attempt: QuizAttempt | null;
+  servedAt: string | null;
+}
+
+export interface QuizOverview {
+  project: { id: string; name: string; learningGoal: string };
+  readiness: { readyMaterials: number; pendingMaterials: number; conceptCount: number; assessableConcepts: number; canStart: boolean };
+  active: QuizSession | null;
+  sessions: QuizSession[];
+  stats: { quizzesCompleted: number; questionsAnswered: number; accuracy: number | null; avgScore: number | null; lastCompletedAt: string | null };
+  mastery: { summary: MasterySummary; concepts: ConceptMastery[] };
+}
+
+export interface QuizSessionDetail {
+  session: QuizSession;
+  questions: QuizQuestion[];
+}
+
+export interface NextQuestionResult {
+  done: boolean;
+  preparing: boolean;
+  question: QuizQuestion | null;
+  session: QuizSession;
+}
+
+export interface AnswerResult {
+  attempt: QuizAttempt;
+  question: QuizQuestion;
+  session: QuizSession;
+  done: boolean;
+}
+
+export type QuizReportReason = "wrong_answer_key" | "unclear" | "not_in_materials" | "too_easy" | "too_hard" | "unfair_grade" | "other";
 
 export interface Paginated<T> {
   items: T[];
@@ -333,9 +521,33 @@ export interface AdminUserDetail {
     grounding: Record<string, number>;
     feedback: { up: number; down: number };
   };
+  assessments: AdminAssessments;
   spaces: Array<Space & { projects: Project[] }>;
   materials: Array<Material & { projectName: string | null }>;
   recentActivity: ActivityEvent[];
+}
+
+export interface AdminAssessments {
+  quizzesCompleted: number;
+  quizzesActive: number;
+  questionsAnswered: number;
+  accuracy: number | null;
+  avgScore: number | null;
+  byType: Array<{ type: QuestionType; answered: number; avgScore: number | null }>;
+  grading: { pending: number; failed: number };
+  recentQuizzes: Array<{
+    id: string;
+    projectId: string;
+    projectName: string | null;
+    mode: QuizMode;
+    completedAt: string | null;
+    answered: number;
+    correct: number;
+    accuracy: number | null;
+    avgScore: number | null;
+    needsWork: string[];
+  }>;
+  mastery: Array<MasterySummary & { projectId: string; projectName: string | null; weakest: Array<{ name: string; mastery: number | null }> }>;
 }
 
 export interface AdminSpaceRow extends Space {
@@ -545,6 +757,25 @@ export interface EvaluationOverview {
   series: Array<{ bucket: string; pass: number; warn: number; fail: number }>;
   recentFailures: EvaluationRow[];
   offlineRuns: EvalRunSummary[];
+  assessment: AssessmentQuality;
+}
+
+/** Quiz generation and grading quality (online evaluation of the assessment features). */
+export interface AssessmentQuality {
+  generation: { items: number; validRate: number; firstPassRate: number; cleanRate: number; topFlags: Array<{ flag: string; count: number }> } | null;
+  grading: { graded: number; passRate: number; consistency: number; grounded: number; topFlags: Array<{ flag: string; count: number }> } | null;
+  judge: {
+    samples: number;
+    passRate: number;
+    answerable: number;
+    keyCorrect: number;
+    distractors: number;
+    clarity: number;
+    difficultyMatch: number;
+    levelMatch: number;
+  } | null;
+  learnerReports: number;
+  gradingBacklog: { pending: number; failed: number };
 }
 
 export interface EvalRunDetail extends EvalRunSummary {
@@ -567,6 +798,7 @@ export interface AiConfiguration {
   provider: string;
   models: { primary: string[]; light: string[]; embedding: { model: string; dimensions: number } };
   tutor: { reasoning: string; judgeSampleRate: number };
+  quiz: { judgeSampleRate: number };
   retrieval: { strongScore: number; minScore: number; vectorSearch: boolean };
   promptVersions: Record<string, string>;
   features: string[];

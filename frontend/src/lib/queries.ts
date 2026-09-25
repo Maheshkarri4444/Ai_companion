@@ -17,6 +17,17 @@ import type {
   JobsOverview,
   LearningItem,
   MaterialPageText,
+  AnswerResult,
+  NextQuestionResult,
+  OptionId,
+  QuestionTypePreference,
+  QuizAttempt,
+  QuizMode,
+  QuizOverview,
+  QuizQuestion,
+  QuizReportReason,
+  QuizSession,
+  QuizSessionDetail,
   TutorMessage,
   TutorOverview,
   AdminActivityEvent,
@@ -53,6 +64,8 @@ export const qk = {
   tutor: (projectId: string) => ["projects", projectId, "tutor"] as const,
   conversation: (projectId: string, conversationId: string) => ["projects", projectId, "tutor", "conversation", conversationId] as const,
   memory: (projectId: string) => ["projects", projectId, "tutor", "memory"] as const,
+  quiz: (projectId: string) => ["projects", projectId, "quiz"] as const,
+  quizSession: (projectId: string, sessionId: string) => ["projects", projectId, "quiz", "session", sessionId] as const,
   admin: ["admin"] as const,
 };
 
@@ -176,6 +189,130 @@ export function useForgetMemory(projectId: string) {
     mutationFn: (itemId: string) => api.delete(`/projects/${projectId}/tutor/memory/${itemId}`),
     onSuccess: () =>
       Promise.all([client.invalidateQueries({ queryKey: qk.memory(projectId) }), client.invalidateQueries({ queryKey: qk.tutor(projectId) })]),
+  });
+}
+
+// ── Quiz & mastery ────────────────────────────────────────────────────────
+export function useQuizOverview(projectId: string) {
+  return useQuery({ queryKey: qk.quiz(projectId), queryFn: () => api.get<QuizOverview>(`/projects/${projectId}/quizzes`) });
+}
+
+export function useQuizSession(projectId: string, sessionId: string) {
+  return useQuery({
+    queryKey: qk.quizSession(projectId, sessionId),
+    queryFn: () => api.get<QuizSessionDetail>(`/projects/${projectId}/quizzes/${sessionId}`),
+    // Answers graded in the background (AI outage) land a few seconds later: poll until none is pending.
+    refetchInterval: (query) => ((query.state.data?.session.pendingCount ?? 0) > 0 ? 3000 : false),
+  });
+}
+
+/** Quiz results change mastery, the next step and the activity feed: refresh the Project's views. */
+function useInvalidateLearning(projectId: string) {
+  const client = useQueryClient();
+  return () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: qk.quiz(projectId) }),
+      client.invalidateQueries({ queryKey: qk.project(projectId), exact: true }),
+      client.invalidateQueries({ queryKey: qk.concepts(projectId) }),
+      client.invalidateQueries({ queryKey: qk.dashboard }),
+    ]);
+}
+
+export interface StartQuizInput {
+  mode: QuizMode;
+  targetCount: number;
+  questionTypes: QuestionTypePreference;
+  conceptIds: string[];
+}
+
+export function useStartQuiz(projectId: string) {
+  const invalidate = useInvalidateLearning(projectId);
+  return useMutation({
+    mutationFn: async (input: StartQuizInput) => (await api.post<{ session: QuizSession }>(`/projects/${projectId}/quizzes`, input)).session,
+    onSuccess: invalidate,
+  });
+}
+
+/** Keeps the cached session (questions + counters) in step with a mutation's response. */
+function useMergeIntoSession(projectId: string, sessionId: string) {
+  const client = useQueryClient();
+  return (session: QuizSession, question?: QuizQuestion | null) =>
+    client.setQueryData<QuizSessionDetail>(qk.quizSession(projectId, sessionId), (current) => {
+      if (!current) return current;
+      const questions = question
+        ? current.questions.some((q) => q.id === question.id)
+          ? current.questions.map((q) => (q.id === question.id ? question : q))
+          : [...current.questions, question]
+        : current.questions;
+      // Mutation responses carry the session without the live summary; keep the last one until the refetch.
+      return { session: { ...session, summary: session.summary ?? current.session.summary }, questions };
+    });
+}
+
+/**
+ * The next question for one slot of the session (`slot` = answers so far), fetched only while no question is on
+ * screen. The server serves a prepared question, writes one within ~20 s, or answers `preparing` — then this polls.
+ * `next` is idempotent server-side, so a repeated call returns the same question.
+ */
+export function useNextQuestion(projectId: string, sessionId: string, slot: number, enabled: boolean) {
+  const merge = useMergeIntoSession(projectId, sessionId);
+  const invalidate = useInvalidateLearning(projectId);
+  return useQuery({
+    queryKey: ["quiz-next", projectId, sessionId, slot],
+    queryFn: async () => {
+      const result = await api.post<NextQuestionResult>(`/projects/${projectId}/quizzes/${sessionId}/next`);
+      merge(result.session, result.question);
+      if (result.done) await invalidate();
+      return result;
+    },
+    enabled,
+    retry: false,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchInterval: (query) => (query.state.data?.preparing ? 750 : false),
+  });
+}
+
+export interface AnswerInput {
+  questionId: string;
+  idempotencyKey: string;
+  optionId?: OptionId;
+  text?: string;
+  skipped?: boolean;
+  timeMs?: number;
+}
+
+export function useAnswerQuestion(projectId: string, sessionId: string) {
+  const merge = useMergeIntoSession(projectId, sessionId);
+  const invalidate = useInvalidateLearning(projectId);
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ questionId, ...body }: AnswerInput) =>
+      api.post<AnswerResult>(`/projects/${projectId}/quizzes/${sessionId}/questions/${questionId}/answer`, body),
+    onSuccess: (result) => {
+      merge(result.session, result.question);
+      // Pull the live summary (and any background grading) from the server; mastery changed everywhere else too.
+      void client.invalidateQueries({ queryKey: qk.quizSession(projectId, sessionId) });
+      return invalidate();
+    },
+  });
+}
+
+export function useReportQuizItem(projectId: string, sessionId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ questionId, ...body }: { questionId: string; target: "question" | "grading"; reason: QuizReportReason; comment?: string }) =>
+      api.post<{ attempt: QuizAttempt }>(`/projects/${projectId}/quizzes/${sessionId}/questions/${questionId}/report`, body),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.quizSession(projectId, sessionId) }),
+  });
+}
+
+export function useCompleteQuiz(projectId: string) {
+  const invalidate = useInvalidateLearning(projectId);
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (sessionId: string) => (await api.post<{ session: QuizSession }>(`/projects/${projectId}/quizzes/${sessionId}/complete`)).session,
+    onSuccess: (session) => Promise.all([invalidate(), client.invalidateQueries({ queryKey: qk.quizSession(projectId, session.id) })]),
   });
 }
 

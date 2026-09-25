@@ -1,4 +1,5 @@
 import { reconcileMaterials } from '../modules/knowledge/knowledge.service';
+import { reconcileQuizAttempts } from '../modules/quiz/quiz.service';
 import { closeAbandonedAnswers } from '../modules/tutor/tutor.service';
 import { STALE_STREAM_MS } from '../modules/tutor/orchestrator';
 import { recoverStaleJobs } from './queue';
@@ -10,6 +11,7 @@ export function registerSystemJobs() {
     const recovered = await recoverStaleJobs();
     const { requeued } = await reconcileMaterials();
     const interruptedAnswers = await closeAbandonedAnswers(STALE_STREAM_MS * 2);
-    return { recoveredJobs: recovered, requeuedMaterials: requeued, interruptedAnswers };
+    const quiz = await reconcileQuizAttempts();
+    return { recoveredJobs: recovered, requeuedMaterials: requeued, interruptedAnswers, ...quiz };
   });
 }

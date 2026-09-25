@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, ChartColumn, Clock, FileText, HardDrive, Lightbulb, ListChecks, Lock, MessageSquare, TrendingUp, Upload, type LucideIcon } from "lucide-react";
+import { ArrowRight, Check, ChartColumn, Clock, FileText, HardDrive, Lightbulb, ListChecks, Lock, MessageSquare, TrendingUp, Upload, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ActivityFeed } from "@/components/activity-feed";
 import { NextStepCard } from "@/components/next-step-card";
+import { MasteryBadge, MasteryBar, MasteryOverview, pct } from "@/components/quiz/mastery";
 import { MaterialStatusBadge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -13,12 +14,23 @@ import { StatCard } from "@/components/ui/misc";
 import { ZoyaAvatar } from "@/components/zoya/zoya-avatar";
 import { formatBytes, formatNumber, pluralize, timeAgo } from "@/lib/format";
 import { useConcepts, useProject } from "@/lib/queries";
-import type { Concept } from "@/lib/types";
+import type { Concept, ProjectDashboard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type StepState = "done" | "current" | "locked";
 
-function LearningPath({ materialCount, pending, ready, tutorUsed }: { materialCount: number; pending: number; ready: number; tutorUsed: boolean }) {
+function LearningPath({
+  materialCount,
+  pending,
+  ready,
+  learning,
+}: {
+  materialCount: number;
+  pending: number;
+  ready: number;
+  learning: ProjectDashboard["learning"];
+}) {
+  const { tutorUsed, quizzesCompleted, activeQuiz, accuracy } = learning;
   const steps: Array<{ label: string; detail: string; icon: LucideIcon; state: StepState; lockedHint?: string }> = [
     {
       label: "Materials",
@@ -33,7 +45,17 @@ function LearningPath({ materialCount, pending, ready, tutorUsed }: { materialCo
       state: tutorUsed ? "done" : ready > 0 ? "current" : "locked",
       lockedHint: "Needs a processed material",
     },
-    { label: "Quiz", detail: "Adaptive practice", icon: ListChecks, state: "locked" },
+    {
+      label: "Quiz",
+      detail: activeQuiz
+        ? `In progress · ${activeQuiz.answered}/${activeQuiz.target}`
+        : quizzesCompleted > 0
+          ? `${pluralize(quizzesCompleted, "quiz", "quizzes")}${accuracy != null ? ` · ${Math.round(accuracy * 100)}% correct` : ""}`
+          : "Adaptive practice",
+      icon: ListChecks,
+      state: quizzesCompleted > 0 ? "done" : ready > 0 ? "current" : "locked",
+      lockedHint: "Needs a processed material",
+    },
     { label: "Growth", detail: "Concept mastery", icon: TrendingUp, state: "locked" },
     { label: "Analytics", detail: "Progress over time", icon: ChartColumn, state: "locked" },
   ];
@@ -81,27 +103,68 @@ function KeyConcepts({ projectId, concepts }: { projectId: string; concepts: Con
         <li key={c.id} className="rounded-xl border border-line p-3 transition-colors hover:border-blue-200 hover:bg-blue-50/40">
           <div className="flex items-start justify-between gap-2">
             <p className="text-sm font-semibold text-ink">{c.name}</p>
-            <span className="flex shrink-0 gap-0.5 pt-1" title={`Importance ${Math.round(c.importance * 5)}/5`}>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <span key={i} className={cn("h-1.5 w-2.5 rounded-full", i < Math.round(c.importance * 5) ? "bg-blue-500" : "bg-slate-200")} />
-              ))}
-            </span>
+            {c.mastery != null ? (
+              <span className="shrink-0" title={`Mastery from ${pluralize(c.evidenceCount, "quiz answer")}`}>
+                <MasteryBadge band={c.masteryBand} className="tabular-nums" />
+              </span>
+            ) : (
+              <span className="flex shrink-0 gap-0.5 pt-1" title={`Importance ${Math.round(c.importance * 5)}/5`}>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <span key={i} className={cn("h-1.5 w-2.5 rounded-full", i < Math.round(c.importance * 5) ? "bg-blue-500" : "bg-slate-200")} />
+                ))}
+              </span>
+            )}
           </div>
           <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted">{c.description}</p>
+          {c.mastery != null && (
+            <div className="mt-2 flex items-center gap-2">
+              <MasteryBar value={c.mastery} className="flex-1" />
+              <span className="text-xs font-medium text-ink tabular-nums">{pct(c.mastery)}</span>
+            </div>
+          )}
           <div className="mt-2 flex items-center justify-between gap-2 text-xs">
             <span className="truncate text-muted">
               {c.sources[0] ? `${c.sources[0].materialTitle} · p. ${c.sources[0].pages.slice(0, 3).join(", ")}` : ""}
             </span>
-            <Link
-              href={`/projects/${projectId}/tutor?ask=${encodeURIComponent(`Explain ${c.name}`)}`}
-              className="shrink-0 font-medium text-blue-700 hover:underline"
-            >
-              Ask Zoya →
-            </Link>
+            <span className="flex shrink-0 items-center gap-3">
+              <Link href={`/projects/${projectId}/quiz?focus=${c.id}&count=5`} className="font-medium text-blue-700 hover:underline">
+                Practise
+              </Link>
+              <Link href={`/projects/${projectId}/tutor?ask=${encodeURIComponent(`Explain ${c.name}`)}`} className="font-medium text-blue-700 hover:underline">
+                Ask Zoya →
+              </Link>
+            </span>
           </div>
         </li>
       ))}
     </ul>
+  );
+}
+
+/** "How well am I learning it?" — mastery with its coverage, and the way into practice. */
+function LearningProgress({ projectId, learning }: { projectId: string; learning: ProjectDashboard["learning"] }) {
+  const assessed = learning.mastery.assessedConcepts > 0;
+  return (
+    <Card>
+      <CardHeader
+        title="Learning progress"
+        description={assessed ? "Estimated from your quiz answers" : "Take a quiz to measure what you know"}
+        icon={<TrendingUp />}
+      />
+      <CardBody className="space-y-3">
+        <MasteryOverview summary={learning.mastery} />
+        <p className="text-xs text-muted">
+          {pluralize(learning.quizzesCompleted, "quiz", "quizzes")} completed · {pluralize(learning.questionsAnswered, "graded answer")}
+          {learning.accuracy != null && <> · {pct(learning.accuracy)} correct</>}
+        </p>
+        <Link
+          href={learning.activeQuiz ? `/projects/${projectId}/quiz/${learning.activeQuiz.id}` : `/projects/${projectId}/quiz`}
+          className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:text-blue-600"
+        >
+          {learning.activeQuiz ? "Resume your quiz" : assessed ? "Practise and see all concepts" : "Take a quiz"} <ArrowRight className="size-3.5" />
+        </Link>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -112,16 +175,15 @@ export default function ProjectOverviewPage() {
   const concepts = useConcepts(projectId, ready > 0);
   if (!data) return null;
 
-  const { project, stats, recentMaterials, recentActivity, nextStep } = data;
+  const { project, stats, learning, recentMaterials, recentActivity, nextStep } = data;
   const pending = stats.materialsByStatus.queued + stats.materialsByStatus.processing;
-  const tutorUsed = nextStep.kind === "continue_tutor";
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader title="Learning path" description="Materials → Tutor → Quiz → Growth → Analytics" />
         <CardBody>
-          <LearningPath materialCount={stats.materialCount} pending={pending} ready={ready} tutorUsed={tutorUsed} />
+          <LearningPath materialCount={stats.materialCount} pending={pending} ready={ready} learning={learning} />
         </CardBody>
       </Card>
 
@@ -208,6 +270,7 @@ export default function ProjectOverviewPage() {
         </div>
 
         <div className="space-y-6">
+          {ready > 0 && <LearningProgress projectId={project.id} learning={learning} />}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-1 xl:grid-cols-2">
             <StatCard label="Materials" value={formatNumber(stats.materialCount)} icon={<FileText />} tone="cyan" />
             <StatCard label="Pending" value={formatNumber(pending)} icon={<Clock />} tone="amber" />

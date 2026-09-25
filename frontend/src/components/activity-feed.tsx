@@ -1,5 +1,7 @@
 import {
   AlertTriangle,
+  CircleCheck,
+  CircleX,
   FileCheck2,
   FilePlus2,
   FileMinus2,
@@ -12,7 +14,11 @@ import {
   FolderPen,
   FolderMinus,
   Layers,
+  ListChecks,
   LogIn,
+  TrendingDown,
+  TrendingUp,
+  Trophy,
   UserPlus,
   type LucideIcon,
 } from "lucide-react";
@@ -113,6 +119,60 @@ export function describeActivity(event: Pick<ActivityEvent, "type" | "metadata">
         tone: m.rating === "down" ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600",
         text: <>Rated an answer from Zoya {m.rating === "down" ? "as unhelpful" : "as helpful"}</>,
       };
+    case "quiz.started": {
+      const focus = Array.isArray(m.focus) ? (m.focus as unknown[]).filter((f): f is string => typeof f === "string") : [];
+      return {
+        Icon: ListChecks,
+        tone: "bg-blue-50 text-blue-600",
+        text: (
+          <>
+            Started a {m.mode === "focused" ? "focused" : m.mode === "review" ? "review" : "adaptive"} quiz in {q(m.projectName)}
+            {focus.length > 0 && <span className="text-muted"> · {focus.slice(0, 3).join(", ")}</span>}
+          </>
+        ),
+      };
+    }
+    case "quiz.question_answered":
+      return {
+        Icon: m.isCorrect ? CircleCheck : CircleX,
+        tone: m.isCorrect ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600",
+        text: (
+          <>
+            Answered a question on {q(Array.isArray(m.conceptNames) ? m.conceptNames[0] : "")}
+            <span className="text-muted"> · {m.isCorrect ? "correct" : "incorrect"}</span>
+          </>
+        ),
+      };
+    case "quiz.completed":
+      return {
+        Icon: Trophy,
+        tone: "bg-emerald-50 text-emerald-600",
+        text: (
+          <>
+            Completed a quiz in {q(m.projectName)}
+            {typeof m.correct === "number" && typeof m.answered === "number" && (
+              <span className="text-muted">
+                {" "}
+                · {m.correct}/{m.answered} correct
+              </span>
+            )}
+          </>
+        ),
+      };
+    case "mastery.updated": {
+      const up = typeof m.after === "number" && typeof m.before === "number" ? m.after >= m.before : true;
+      const band = str(m.band).replace(/_/g, " ");
+      return {
+        Icon: up ? TrendingUp : TrendingDown,
+        tone: up ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500",
+        text: (
+          <>
+            {m.before == null ? "First assessment of" : up ? "Mastery rose on" : "Mastery dropped on"} {q(m.conceptName)}
+            {band && <span className="text-muted"> · now {band}</span>}
+          </>
+        ),
+      };
+    }
     default:
       return { Icon: Layers, tone: "bg-slate-100 text-slate-500", text: <>{(event.type as string).replace(/[._]/g, " ")}</> };
   }
@@ -135,11 +195,19 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   "material.reprocessed": "Material retried",
   "tutor.answered": "Tutor question",
   "tutor.feedback": "Tutor feedback",
+  "quiz.started": "Quiz started",
+  "quiz.question_answered": "Quiz answer",
+  "quiz.completed": "Quiz completed",
+  "mastery.updated": "Mastery changed",
 };
 
 function eventHref(event: ActivityEvent): string | undefined {
   if (event.type.endsWith(".deleted")) return undefined;
   if (event.type.startsWith("material.") && event.projectId) return `/projects/${event.projectId}/materials`;
+  if ((event.type.startsWith("quiz.") || event.type === "mastery.updated") && event.projectId) {
+    const sessionId = str(event.metadata?.sessionId);
+    return `/projects/${event.projectId}/quiz${sessionId ? `/${sessionId}` : ""}`;
+  }
   if (event.type.startsWith("tutor.") && event.projectId) {
     const conversationId = str(event.metadata?.conversationId);
     return `/projects/${event.projectId}/tutor${conversationId ? `?c=${conversationId}` : ""}`;

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenCheck, CheckCircle2, FlaskConical, Gavel, ListChecks, ThumbsUp, XCircle } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, ClipboardCheck, FlaskConical, Gavel, Hourglass, ListChecks, ThumbsUp, XCircle } from "lucide-react";
 import { Suspense, useState } from "react";
 import { AiCallDialog } from "@/components/admin/ai-call-dialog";
 import { bucketLabel, RangeTabs } from "@/components/admin/column-chart";
@@ -13,7 +13,7 @@ import { Select } from "@/components/ui/field";
 import { PageHeader, Pagination, StatCard } from "@/components/ui/misc";
 import { formatDateTime, formatNumber, timeAgo } from "@/lib/format";
 import { useEvalRun, useEvaluationOverview, useEvaluations } from "@/lib/queries";
-import type { EvaluationOverview } from "@/lib/types";
+import type { AssessmentQuality, EvaluationOverview } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const pct = (v: number | null | undefined) => (v == null ? "—" : `${Math.round(v * 1000) / 10}%`);
@@ -24,6 +24,22 @@ const EVALUATOR_LABEL: Record<string, string> = {
   llm_judge: "LLM judge (sampled)",
   learner_feedback: "Learner feedback",
   offline_suite: "Offline suite",
+};
+const SUBJECT_LABEL: Record<string, string> = {
+  tutor_message: "Tutor answers",
+  quiz_question: "Quiz questions",
+  quiz_grading: "Quiz grading",
+};
+const FLAG_LABEL: Record<string, string> = {
+  regenerated: "Regenerated after validation",
+  unknown_source_ids: "Cited unknown sources",
+  correct_option_longest: "Correct option is the longest",
+  missing_rationale: "Missing option rationale",
+  difficulty_mismatch: "Difficulty mismatch (self-rated)",
+  level_mismatch: "Level mismatch (self-rated)",
+  evidence_not_in_answer: "Quoted evidence not in answer",
+  score_disagreement: "Score vs. holistic disagreement",
+  answer_flagged: "Answer tried to steer grading",
 };
 const GROUNDING_TONE: Record<string, string> = {
   grounded: "bg-emerald-500",
@@ -153,11 +169,113 @@ function RunDialog({ runId, onClose }: { runId: string | null; onClose: () => vo
   );
 }
 
+function FlagList({ flags, empty }: { flags: Array<{ flag: string; count: number }>; empty: string }) {
+  if (flags.length === 0) return <p className="text-sm text-muted">{empty}</p>;
+  return (
+    <ul className="space-y-1.5 text-sm">
+      {flags.map((f) => (
+        <li key={f.flag} className="flex items-center justify-between gap-3">
+          <span className="text-ink-soft" title={f.flag}>
+            {FLAG_LABEL[f.flag] ?? f.flag.replace(/_/g, " ")}
+          </span>
+          <span className="text-muted tabular-nums">{f.count}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Quiz generation and grading (PRD §14): validity of every generated item, grading checks, the sampled judge, reports. */
+function AssessmentQualitySection({ data }: { data: AssessmentQuality }) {
+  const judge = data.judge;
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-ink">
+          <ClipboardCheck className="size-5 text-blue-600" /> Assessment quality
+        </h2>
+        <p className="text-sm text-muted">
+          Every generated question is validated before it is shown; open answers are graded against a rubric and checked; a sample of questions (and
+          every reported one) goes to the judge.
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Questions accepted"
+          value={pct(data.generation?.validRate)}
+          icon={<ListChecks />}
+          hint={data.generation ? `${formatNumber(data.generation.items)} generated · ${pct(data.generation.firstPassRate)} first try` : "No questions yet"}
+        />
+        <StatCard
+          label="Judge: questions pass"
+          value={pct(judge?.passRate)}
+          icon={<Gavel />}
+          tone="indigo"
+          hint={judge ? `${judge.samples} judged · answer key ${score(judge.keyCorrect)}` : "No judged questions yet"}
+        />
+        <StatCard
+          label="Grading checks passed"
+          value={pct(data.grading?.passRate)}
+          icon={<CheckCircle2 />}
+          tone="emerald"
+          hint={data.grading ? `${formatNumber(data.grading.graded)} AI-graded answers` : "No written answers graded yet"}
+        />
+        <StatCard
+          label="Grading backlog"
+          value={formatNumber(data.gradingBacklog.pending)}
+          icon={<Hourglass />}
+          tone="amber"
+          hint={`${data.gradingBacklog.failed} could not be graded · ${data.learnerReports} learner reports`}
+        />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="p-5">
+          <p className="mb-3 font-display text-[15px] font-semibold text-ink">Judge scores (questions)</p>
+          {!judge ? (
+            <p className="text-sm text-muted">No judged questions in this period.</p>
+          ) : (
+            <dl className="space-y-1.5 text-sm">
+              {(
+                [
+                  ["Answerable from sources", judge.answerable],
+                  ["Answer key correct", judge.keyCorrect],
+                  ["Distractor quality", judge.distractors],
+                  ["Clarity", judge.clarity],
+                  ["Difficulty as targeted", judge.difficultyMatch],
+                  ["Level as targeted", judge.levelMatch],
+                ] as Array<[string, number]>
+              ).map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-3">
+                  <dt className="text-ink-soft">{label}</dt>
+                  <dd className="text-muted tabular-nums">{score(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </Card>
+        <Card className="p-5">
+          <p className="mb-3 font-display text-[15px] font-semibold text-ink">Generation warnings</p>
+          <FlagList flags={data.generation?.topFlags ?? []} empty="No warnings in this period." />
+        </Card>
+        <Card className="p-5">
+          <p className="mb-3 font-display text-[15px] font-semibold text-ink">Grading flags</p>
+          {data.grading && (
+            <p className="mb-2 text-xs text-muted">
+              Evidence verified {pct(data.grading.grounded)} · score consistent {pct(data.grading.consistency)}
+            </p>
+          )}
+          <FlagList flags={data.grading?.topFlags ?? []} empty="No grading flags in this period." />
+        </Card>
+      </div>
+    </section>
+  );
+}
+
 function EvaluationView() {
-  const [filters, setFilters] = useUrlFilters({ range: "7d", evaluator: "", verdict: "", page: "1" });
+  const [filters, setFilters] = useUrlFilters({ range: "7d", evaluator: "", verdict: "", subject: "", page: "1" });
   const page = Number(filters.page) || 1;
   const overview = useEvaluationOverview(filters.range);
-  const list = useEvaluations({ evaluator: filters.evaluator, verdict: filters.verdict, page, limit: 12 });
+  const list = useEvaluations({ evaluator: filters.evaluator, verdict: filters.verdict, subjectType: filters.subject, page, limit: 12 });
   const [openCall, setOpenCall] = useState<string | null>(null);
   const [openRun, setOpenRun] = useState<string | null>(null);
   const data = overview.data;
@@ -169,7 +287,7 @@ function EvaluationView() {
     <div className="animate-rise space-y-6">
       <PageHeader
         title="AI evaluation"
-        description="Quality of Zoya's answers from four evaluators: rule checks on every answer, a sampled LLM judge, learner feedback and the offline regression suite."
+        description="Quality of Zoya's answers from four evaluators — rule checks on every answer, a sampled LLM judge, learner feedback and the offline regression suite — and of the quiz questions and grading."
         actions={<RangeTabs value={filters.range} onChange={(range) => setFilters({ range })} />}
       />
 
@@ -341,15 +459,25 @@ function EvaluationView() {
               </tbody>
             </Table>
           </Card>
+
+          <AssessmentQualitySection data={data.assessment} />
         </>
       )}
 
       <div>
-        <h2 className="mb-3 font-display text-lg font-semibold text-ink">Evaluated answers</h2>
+        <h2 className="mb-3 font-display text-lg font-semibold text-ink">Evaluated items</h2>
         <FilterBar>
           <Select value={filters.evaluator} onChange={(e) => setFilters({ evaluator: e.target.value })} className="sm:w-56" aria-label="Evaluator">
             <option value="">All evaluators</option>
             {Object.entries(EVALUATOR_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </Select>
+          <Select value={filters.subject} onChange={(e) => setFilters({ subject: e.target.value })} className="sm:w-48" aria-label="Subject">
+            <option value="">Everything evaluated</option>
+            {Object.entries(SUBJECT_LABEL).map(([k, v]) => (
               <option key={k} value={k}>
                 {v}
               </option>
@@ -382,6 +510,7 @@ function EvaluationView() {
                       <p className="flex flex-wrap items-center gap-2 text-sm">
                         <Badge tone={VERDICT_TONE[e.verdict]}>{e.verdict}</Badge>
                         <span className="font-medium text-ink">{EVALUATOR_LABEL[e.evaluator] ?? e.evaluator}</span>
+                        <span className="text-muted">· {SUBJECT_LABEL[e.subjectType] ?? e.subjectType.replace(/_/g, " ")}</span>
                         {e.user && <span className="text-muted">· {e.user.name}</span>}
                         <span className="text-muted">· {e.promptVersion ?? "—"}</span>
                         <span className="ml-auto text-xs text-muted">{timeAgo(e.createdAt)}</span>
@@ -400,7 +529,7 @@ function EvaluationView() {
                         ))}
                         {e.aiCallId && (
                           <button type="button" onClick={() => setOpenCall(e.aiCallId)} className="font-medium text-blue-700 hover:underline">
-                            View judge call →
+                            View AI call →
                           </button>
                         )}
                       </div>

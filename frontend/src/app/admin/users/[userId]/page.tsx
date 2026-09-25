@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Bot, CalendarDays, Clock, ExternalLink, FileText, FolderKanban, HardDrive, Layers, ListChecks, LogIn, Target, UserX } from "lucide-react";
+import { ArrowRight, Bot, CalendarDays, Clock, ExternalLink, FileText, FolderKanban, GraduationCap, HardDrive, Layers, ListChecks, LogIn, Target, UserX } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ActivityFeed } from "@/components/activity-feed";
@@ -48,7 +48,8 @@ export default function AdminUserDetailPage() {
   }
   if (error || !data) return <ErrorState error={error} onRetry={() => refetch()} />;
 
-  const { user, stats, spaces, materials, recentActivity, aiUsage } = data;
+  const { user, stats, spaces, materials, recentActivity, aiUsage, assessments } = data;
+  const pctOf = (value: number | null) => (value == null ? "—" : `${Math.round(value * 100)}%`);
 
   return (
     <div className="animate-rise space-y-6">
@@ -139,6 +140,92 @@ export default function AdminUserDetailPage() {
         </CardBody>
       </Card>
 
+      <Card>
+        <CardHeader
+          title="Assessments & mastery"
+          description="Adaptive quiz results and the concept mastery estimated from this learner's answers"
+          icon={<GraduationCap />}
+        />
+        <CardBody className="space-y-5">
+          <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4 lg:grid-cols-6">
+            {(
+              [
+                ["Quizzes completed", formatNumber(assessments.quizzesCompleted)],
+                ["In progress", formatNumber(assessments.quizzesActive)],
+                ["Answers", formatNumber(assessments.questionsAnswered)],
+                ["Accuracy", pctOf(assessments.accuracy)],
+                ["Average score", pctOf(assessments.avgScore)],
+                ["Grading pending / failed", `${assessments.grading.pending} / ${assessments.grading.failed}`],
+              ] as Array<[string, string]>
+            ).map(([k, v]) => (
+              <div key={k}>
+                <dt className="text-xs text-muted">{k}</dt>
+                <dd className="mt-0.5 text-lg font-semibold text-ink tabular-nums">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="flex flex-wrap gap-2 text-xs">
+            {assessments.byType.map((t) => (
+              <Badge key={t.type} tone="slate">
+                {t.type === "mcq" ? "Multiple choice" : "Written"} · {formatNumber(t.answered)} answered · avg {pctOf(t.avgScore)}
+              </Badge>
+            ))}
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div>
+              <p className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">Mastery by project</p>
+              {assessments.mastery.length === 0 ? (
+                <p className="text-sm text-muted">No concepts yet.</p>
+              ) : (
+                <ul className="space-y-2.5">
+                  {assessments.mastery.map((m) => (
+                    <li key={m.projectId} className="rounded-xl border border-line px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate font-medium text-ink">{m.projectName}</span>
+                        <span className="shrink-0 text-muted tabular-nums">
+                          <span className="font-semibold text-ink">{pctOf(m.overallMastery)}</span> · {m.assessedConcepts}/{m.totalConcepts} assessed
+                        </span>
+                      </div>
+                      {m.weakest.length > 0 && (
+                        <p className="mt-1 truncate text-xs text-muted">
+                          Weakest: {m.weakest.map((w) => `${w.name} (${pctOf(w.mastery)})`).join(", ")}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">Recent quizzes</p>
+              {assessments.recentQuizzes.length === 0 ? (
+                <p className="text-sm text-muted">No completed quizzes yet.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {assessments.recentQuizzes.map((q) => (
+                    <li key={q.id} className="flex items-start justify-between gap-3 py-2 text-sm first:pt-0">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-ink">{q.projectName ?? "Deleted project"}</p>
+                        <p className="truncate text-xs text-muted">
+                          {q.mode} · {formatDateTime(q.completedAt)}
+                          {q.needsWork.length > 0 && <> · needs work: {q.needsWork.slice(0, 2).join(", ")}</>}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs text-muted tabular-nums">
+                        <span className="font-semibold text-ink">
+                          {q.correct}/{q.answered}
+                        </span>{" "}
+                        · avg {pctOf(q.avgScore)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="Learning journey" description="Spaces and the Projects inside them" />
@@ -184,7 +271,7 @@ export default function AdminUserDetailPage() {
               ))
             )}
             <p className="rounded-xl border border-dashed border-line-strong bg-canvas/50 px-4 py-3 text-xs text-muted">
-              Assessments, concept mastery and AI usage for this learner appear here once those features are live.
+              Growth over time and learning analytics for this learner appear here once those features are live.
             </p>
           </CardBody>
         </Card>

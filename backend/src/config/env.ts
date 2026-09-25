@@ -60,6 +60,8 @@ const EnvSchema = z.object({
   RETRIEVAL_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.58),
   VECTOR_SEARCH_ENABLED: booleanish.default(true),
   TUTOR_JUDGE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.3),
+  /** Share of generated quiz questions reviewed by the LLM judge (plus every question with rule warnings). */
+  QUIZ_JUDGE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.2),
 
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
   WORKER_POLL_MS: z.coerce.number().int().min(100).max(60_000).default(1000),

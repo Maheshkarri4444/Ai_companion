@@ -6,6 +6,7 @@ import { isDuplicateKeyError } from '../../lib/errors';
 import { escapePromptData, slugify } from '../../lib/text';
 import { dot } from '../../lib/vector';
 import { Chunk, Concept, type IConcept } from '../../models/knowledge.model';
+import { deleteConceptMastery } from '../mastery/mastery.service';
 
 // Semantic rules are validated (repair round on failure); pure size limits are applied by truncation below,
 // so an over-long but otherwise good answer never costs a second model call.
@@ -198,7 +199,7 @@ export async function linkChunksToConcepts(ownerId: Types.ObjectId, projectId: T
   }
 }
 
-/** Removes a deleted material from concept sources; concepts left without sources are deleted. */
+/** Removes a deleted material from concept sources; concepts left without sources (and their mastery) are deleted. */
 export async function detachMaterialFromConcepts(ownerId: Types.ObjectId, projectId: Types.ObjectId, materialId: Types.ObjectId) {
   await Concept.updateMany({ ownerId, projectId }, { $pull: { sources: { materialId } } });
   const orphans = await Concept.find({ ownerId, projectId, sources: { $size: 0 } }, { _id: 1 }).lean();
@@ -206,6 +207,8 @@ export async function detachMaterialFromConcepts(ownerId: Types.ObjectId, projec
     const ids = orphans.map((o) => o._id);
     await Concept.deleteMany({ _id: { $in: ids } });
     await Chunk.updateMany({ ownerId, projectId }, { $pull: { conceptIds: { $in: ids } } });
+    // Quiz history keeps its name snapshots; the ability estimate of a concept that no longer exists goes.
+    await deleteConceptMastery(ownerId, projectId, ids);
   }
   return orphans.length;
 }

@@ -2,6 +2,9 @@ import { registerSystemJobs } from './jobs/system';
 import { registerEvaluationJobs } from './modules/evaluation/evaluation.jobs';
 import { registerKnowledgeJobs } from './modules/knowledge/pipeline';
 import { registerCoreContextProviders } from './modules/learning-context/providers';
+import { registerQuizContextProviders } from './modules/quiz/providers';
+import { registerQuizJobs } from './modules/quiz/quiz.jobs';
+import { registerQuizTutorTools } from './modules/quiz/tools';
 import { registerCoreTutorTools } from './modules/tutor/tools';
 import { registerTutorJobs } from './modules/tutor/tutor.jobs';
 import { registerWorkflows } from './modules/workflows';
@@ -17,9 +20,12 @@ export function registerModules() {
   registered = true;
   registerKnowledgeJobs();
   registerTutorJobs();
+  registerQuizJobs();
   registerEvaluationJobs();
   registerSystemJobs();
   registerWorkflows();
   registerCoreContextProviders();
+  registerQuizContextProviders();
   registerCoreTutorTools();
+  registerQuizTutorTools();
 }

@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { handler } from '../../lib/handler';
 import { authenticate } from '../../middleware/authenticate';
 import { knowledgeRouter } from '../knowledge/knowledge.routes';
+import { masteryRouter } from '../mastery/mastery.routes';
 import { materialsRouter } from '../materials/materials.routes';
+import { quizRouter } from '../quiz/quiz.routes';
 import { tutorRouter } from '../tutor/tutor.routes';
 import { projectParams, recentProjectsQuery, updateProjectBody } from './projects.schemas';
 import { deleteProject, getProjectDashboard, listRecentProjects, updateProject } from './projects.service';
@@ -39,5 +41,7 @@ projectsRouter.delete(
 
 projectsRouter.use('/:projectId/materials', materialsRouter);
 projectsRouter.use('/:projectId/tutor', tutorRouter);
+projectsRouter.use('/:projectId/quizzes', quizRouter);
+projectsRouter.use('/:projectId/mastery', masteryRouter);
 // Knowledge routes (concepts, page text, processing retry) live beside materials under the Project.
 projectsRouter.use('/:projectId', knowledgeRouter);
