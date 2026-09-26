@@ -70,7 +70,7 @@ notes works. A document of 5–15 pages with clear sections gives the best demo.
 | 10 | **Mastery / Growth** | Finish → results; then open the **Growth** tab | Mastery before → after per concept; concepts grouped as improving, stable or requiring attention, with reasons |
 | 11 | **Analytics** | **Analytics** tab, then **Analytics** in the sidebar | Project activity, quiz performance, mastery and AI activity; global streaks and per-Space progress |
 | 12 | **Recommendation** | **Home** (hero) or **Overview → What to do next** → click the action | A focused quiz on the weak concept starts, after *Review first* has pointed to the pages; the recommendation is marked as followed |
-| 13 | **Admin Dashboard** | Sign in as the admin → **Overview**, **Users → the learner**, **Engagement**, **Learning analytics**, **AI usage** (open a call trace), **AI evaluation**, **Background jobs**, **System health** | Platform KPIs; the learner's journey with AI usage, assessments and growth; every AI call traced; quality metrics; queue and system status |
+| 13 | **Admin Dashboard** | Sign in as the admin (the [demo admin login](../README.md#demo-admin-login) is also shown on the sign-in page) → **Overview**, **Users → the learner**, **Engagement**, **Learning analytics**, **AI usage** (open a call trace), **AI evaluation**, **Background jobs**, **System health** | Platform KPIs; the learner's journey with AI usage, assessments and growth; every AI call traced; quality metrics; queue and system status |
 
 **Extra checks**
 

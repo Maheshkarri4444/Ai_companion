@@ -11,40 +11,51 @@ users, learning activity, AI usage and system health.
 > and **growth analysis, recommendations and analytics** for learners and admins (195 backend tests; live Tutor regression suite 18/18 on Gemini).
 > The full design, decisions and build status live in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
+## Demo admin login
+
+For demo purposes, use these admin credentials to log in to the admin panel:
+
+| Email | Password |
+|---|---|
+| `admin@studycompanion.dev` | `Admin#Study2026` |
+
+The same box is shown on the app's [sign-in page](https://ai-companion-two-jet.vercel.app/login), with a button that fills the form. Learners can
+create their own accounts with **Create an account**.
+
 ## Submission
 
 | Deliverable | Where |
 |---|---|
-| Working application | **https://ai-companion-two-jet.vercel.app** (admin credentials for reviewers are shared privately) |
-| Demo video | **[▶ Watch the demo (5:47)](docs/demo/demo_ai_study_companion.mp4)** — chapters in [Demo video](#demo-video) |
+| Working application | **https://ai-companion-two-jet.vercel.app** — for the admin panel, use the [demo admin login](#demo-admin-login) |
+| Demo video | **[▶ Watch on YouTube (5:47)](https://youtu.be/YEGCGngM3lg)** — chapters in [Demo video](#demo-video) |
 | Source code, setup, configuration examples, testing and deployment | this repository — [Setup](#setup) · [`backend/.env.example`](backend/.env.example) · [`frontend/.env.example`](frontend/.env.example) · [Testing](docs/TESTING.md) · [Deployment](docs/DEPLOYMENT.md) |
-| Architecture documentation (diagram + decisions) | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): diagram in [§3](docs/ARCHITECTURE.md#3-system-overview), decisions in [§32](docs/ARCHITECTURE.md#32-key-decisions-simplifications--future-work) |
-| AI usage documentation | [docs/AI_USAGE.md](docs/AI_USAGE.md): AI used to build the product vs. AI used by the product |
-| Development prompts | [docs/DEVELOPMENT_PROMPTS.md](docs/DEVELOPMENT_PROMPTS.md) |
+| Architecture documentation (diagram + decisions) | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): diagram in [§3](docs/ARCHITECTURE.md#3-system-overview), decisions in [§32](docs/ARCHITECTURE.md#32-key-decisions-simplifications--future-work); also submitted as a PDF |
+| AI usage documentation | Submitted as a separate PDF: **AI Tools and Usage** (AI used to build the product vs. AI used by the product) |
+| Development prompts | Submitted as a separate PDF: **Development Prompts** (the actual prompts, verbatim) |
 | Evaluation approach | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Known limitations | [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md) |
 | Future improvements | [docs/FUTURE_IMPROVEMENTS.md](docs/FUTURE_IMPROVEMENTS.md) |
 
 ## Demo video
 
-**The demo video is here: [▶ docs/demo/demo_ai_study_companion.mp4](docs/demo/demo_ai_study_companion.mp4)** (5 min 47 s, recorded on the live app).
+**▶ Watch the demo on YouTube: https://youtu.be/YEGCGngM3lg** (5 min 47 s, recorded on the live app)
 
-<a href="docs/demo/demo_ai_study_companion.mp4"><img src="docs/demo/demo-thumbnail.jpg" width="640" alt="Demo video: click to watch"></a>
+<a href="https://youtu.be/YEGCGngM3lg"><img src="docs/demo/demo-thumbnail.jpg" width="640" alt="Play the demo video on YouTube"></a>
 
 | Time | What it shows |
 |---|---|
-| 0:00 | Register a learner account |
-| 0:15 | Create a Space and a Project with a learning goal |
-| 0:45 | Upload a PDF; background processing until *Ready* |
-| 1:05 | Ask Zoya: grounded answers with page citations; the source viewer highlights the passage (1:15) |
-| 1:55 | Summarize, revision plan and *Test me* |
-| 2:20 | Adaptive quiz: multiple-choice feedback with the source and mastery change, then a written answer graded against a rubric (3:05) |
-| 3:45 | Quiz results: score, mastery by concept, strengths and what needs work |
-| 3:50 | Growth analysis and *What to do next* recommendations |
-| 4:05 | Focused practice quiz |
-| 4:35 | Project analytics |
-| 4:45 | Admin console: overview, learner detail, Spaces, Projects, Engagement, Learning analytics |
-| 5:20 | Admin: System health, AI usage, AI evaluation, Background jobs |
+| [0:00](https://youtu.be/YEGCGngM3lg?t=0) | Register a learner account |
+| [0:15](https://youtu.be/YEGCGngM3lg?t=15) | Create a Space and a Project with a learning goal |
+| [0:45](https://youtu.be/YEGCGngM3lg?t=45) | Upload a PDF; background processing until *Ready* |
+| [1:05](https://youtu.be/YEGCGngM3lg?t=65) | Ask Zoya: grounded answers with page citations; the source viewer highlights the passage ([1:15](https://youtu.be/YEGCGngM3lg?t=75)) |
+| [1:55](https://youtu.be/YEGCGngM3lg?t=115) | Summarize, revision plan and *Test me* |
+| [2:20](https://youtu.be/YEGCGngM3lg?t=140) | Adaptive quiz: multiple-choice feedback with the source and mastery change, then a written answer graded against a rubric ([3:05](https://youtu.be/YEGCGngM3lg?t=185)) |
+| [3:45](https://youtu.be/YEGCGngM3lg?t=225) | Quiz results: score, mastery by concept, strengths and what needs work |
+| [3:50](https://youtu.be/YEGCGngM3lg?t=230) | Growth analysis and *What to do next* recommendations |
+| [4:05](https://youtu.be/YEGCGngM3lg?t=245) | Focused practice quiz |
+| [4:35](https://youtu.be/YEGCGngM3lg?t=275) | Project analytics |
+| [4:45](https://youtu.be/YEGCGngM3lg?t=285) | Admin console: overview, learner detail, Spaces, Projects, Engagement, Learning analytics |
+| [5:20](https://youtu.be/YEGCGngM3lg?t=320) | Admin: System health, AI usage, AI evaluation, Background jobs |
 
 ## App tour
 
@@ -54,7 +65,7 @@ Screenshots come from a local demo database with sample learners and real Gemini
 
 | Panel | Preview |
 |---|---|
-| **Sign in / Register** — Email + password accounts. Learners land in their workspace, admins in the admin console. | <a href="docs/screenshots/login.jpg"><img src="docs/screenshots/login.jpg" width="400" alt="Sign in"></a> |
+| **Sign in / Register** — Email + password accounts. Learners land in their workspace, admins in the admin console; the sign-in page shows the demo admin login. | <a href="docs/screenshots/login.jpg"><img src="docs/screenshots/login.jpg" width="400" alt="Sign in"></a> |
 | **Home** — Answers *where was I, how am I doing, what next?*: the recommended next action (one click starts it), continue learning, recent Projects, overall progress and areas requiring attention. | <a href="docs/screenshots/home.jpg"><img src="docs/screenshots/home.jpg" width="400" alt="Home dashboard"></a> |
 | **Spaces** — Broad learning areas (a skill, a certification, an interest) with their own colour and icon. | <a href="docs/screenshots/spaces.jpg"><img src="docs/screenshots/spaces.jpg" width="400" alt="Spaces"></a> |
 | **Space dashboard** — The Space's Projects with their mastery, plus overall progress, areas requiring attention and recent activity. | <a href="docs/screenshots/space.jpg"><img src="docs/screenshots/space.jpg" width="400" alt="Space dashboard"></a> |
@@ -262,9 +273,9 @@ validated AI output, rate limits, and admin-only APIs.
 - [Architecture](docs/ARCHITECTURE.md): system design for every phase, data model, API reference, the AI layer and Tutor pipeline
   (§12–§15), the adaptive quiz and mastery model (§16–§17), growth, recommendations and analytics (§18–§21), learning context (§20),
   the admin console (§22), observability and evaluation results (§23–§24), security, testing, deployment, build status and decision log.
-- [AI usage](docs/AI_USAGE.md): AI used to build the product (development tools) vs. AI used by the product (models, features, guardrails).
-- [Development prompts](docs/DEVELOPMENT_PROMPTS.md): the prompts used with AI development tools, by area.
 - [Evaluation approach](docs/EVALUATION.md): how Tutor quality, retrieval, assessments, mastery and recommendations are evaluated, with results.
 - [Testing](docs/TESTING.md): automated suites, the live AI regression suite and a manual end-to-end walkthrough (also the demo script).
 - [Deployment](docs/DEPLOYMENT.md): Vercel + Render + Atlas settings, smoke test and troubleshooting.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) · [Future improvements](docs/FUTURE_IMPROVEMENTS.md).
+
+The **AI Tools and Usage** and **Development Prompts** documents, and a PDF of the architecture document, are submitted as separate PDFs.

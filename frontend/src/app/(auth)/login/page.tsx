@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowRight } from "lucide-react";
+import { AlertCircle, ArrowRight, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
@@ -9,6 +9,7 @@ import { PasswordInput, safeNextPath } from "@/components/auth/password-input";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { api, errorMessage } from "@/lib/api";
+import { DEMO_ADMIN } from "@/lib/demo";
 import { qk } from "@/lib/queries";
 import type { User } from "@/lib/types";
 
@@ -40,6 +41,7 @@ function LoginForm() {
   }
 
   return (
+    <>
     <form onSubmit={onSubmit} className="space-y-5" noValidate>
       {error && (
         <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-700">
@@ -73,6 +75,38 @@ function LoginForm() {
         Sign in <ArrowRight className="size-4" />
       </Button>
     </form>
+    {DEMO_ADMIN.email && (
+      <section aria-labelledby="demo-admin" className="mt-6 rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+        <p id="demo-admin" className="flex items-center gap-2 text-sm font-semibold text-blue-900">
+          <ShieldCheck className="size-4 text-blue-600" /> Demo admin access
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-blue-900/75">For demo purposes, use these admin credentials to log in to the admin panel.</p>
+        <dl className="mt-3 space-y-1.5 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-xs text-muted">Email</dt>
+            <dd className="truncate font-mono text-[13px] text-ink select-all">{DEMO_ADMIN.email}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-xs text-muted">Password</dt>
+            <dd className="truncate font-mono text-[13px] text-ink select-all">{DEMO_ADMIN.password}</dd>
+          </div>
+        </dl>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="mt-3 w-full"
+          onClick={() => {
+            setEmail(DEMO_ADMIN.email);
+            setPassword(DEMO_ADMIN.password);
+            setError(null);
+          }}
+        >
+          Use demo admin login
+        </Button>
+      </section>
+    )}
+    </>
   );
 }
 

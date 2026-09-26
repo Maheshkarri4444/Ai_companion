@@ -49,6 +49,7 @@ Many of these are deliberate simplifications recorded in the decision log ([ARCH
 
 - **No email verification, password reset or 2FA**, and no profile or password editing in the UI (the `preferences` field is reserved). Resetting the admin password uses `npm run seed:admin`.
 - **Registration reveals whether an email exists** (409), for clearer learner UX. Login itself does not reveal it.
+- **The demo admin login is public.** It is shown in the README and on the sign-in page so reviewers can open the admin console, which means anyone can see learner data on the demo deployment. The admin API is read-only except job retries. Rotate the password after the review.
 - **Admins can open learners' PDFs** to debug processing. Every view is written to the audit log, but there is no separate consent step.
 - **Sessions are 7-day JWTs in an httpOnly cookie.** Logout clears the cookie, but a copied token stays valid until it expires. Exceptions: disabling the account, or bumping its token version (currently only the `seed:admin` reset does this), rejects it immediately. There is no server-side session list or "sign out everywhere".
 - **Learner content is sent to Google Gemini.** Materials, questions and answers are processed by the model provider, subject to the provider's data terms.

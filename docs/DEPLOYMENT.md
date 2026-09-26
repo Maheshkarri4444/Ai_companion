@@ -11,7 +11,7 @@
 | AI | Google Gemini API |
 | Health (through the app's origin) | [`/api/health`](https://ai-companion-two-jet.vercel.app/api/health) (liveness) · [`/api/health/ready`](https://ai-companion-two-jet.vercel.app/api/health/ready) (database round trip) |
 
-Learners can register on the site. **Admin credentials for reviewers are shared privately, never in this repository.**
+Learners can register on the site. For the demo, the admin login is shown in the [README](../README.md#demo-admin-login) and on the sign-in page.
 
 ```mermaid
 flowchart LR
@@ -92,4 +92,6 @@ Create a **Web Service** from the repository:
 ## Secrets policy
 
 Real values live only in the hosts' dashboards and in local, git-ignored `.env` files. The repository contains placeholders only
-(`backend/.env.example`, `frontend/.env.example`).
+(`backend/.env.example`, `frontend/.env.example`). The one deliberate exception is the **demo admin login**, published for reviewers.
+Its password is not used anywhere else and should be rotated after the review: set a new `ADMIN_PASSWORD` on Render, run `npm run seed:admin`,
+then update the README and `frontend/src/lib/demo.ts`.

@@ -5,7 +5,7 @@
 
 | | |
 |---|---|
-| **Version** | 1.5 |
+| **Version** | 1.6 |
 | **Last updated** | 2026-09-26 |
 | **Current phase** | Phases 1–5 ✅ built — Foundation, background knowledge pipeline, the AI layer (Zoya tutor, learning context, evaluation, observability), the adaptive quiz with mastery estimation, and growth analysis, recommendations and analytics (learner + admin). Phase 6 in progress: **deployed** (https://ai-companion-two-jet.vercel.app) and submission documents written; remaining: offline quiz/recommendation eval suites, CI, hardening |
 | **Stack** | Next.js 16 · Node.js 22 / Express 5 · MongoDB Atlas 8 · Google Gemini |
@@ -293,7 +293,8 @@ sequenceDiagram
   lower-cased; unique index.
 - **Anti-enumeration**: login returns the same 401 for unknown email and wrong password, and performs a dummy bcrypt compare for unknown emails.
 - **Session token**: JWT HS256, secret ≥ 32 chars from env; claims `{ sub, role, tv, iat, exp }`; lifetime `SESSION_TTL_DAYS` (default 7) for both the JWT and the cookie. `tv` mirrors `user.tokenVersion`,
-  which is incremented on password change / "log out everywhere" to revoke outstanding tokens.
+  which is incremented to revoke outstanding tokens — today by the admin reset (`npm run seed:admin`); learner password change and
+  "sign out everywhere" are not built yet (D35). Logout clears the cookie; a disabled account is rejected on its next request.
 - **`authenticate`**: reads the cookie → verifies → loads `{ role, status, tokenVersion }` → rejects disabled users and stale `tv` → sets `req.auth`.
   Updates `lastActiveAt` at most every 5 minutes (write throttling).
 - **RBAC**: roles `user` and `admin`. `/api/admin/*` requires `admin`. Registration always creates `user`; `role` is never accepted from clients.
@@ -505,7 +506,7 @@ All routes are under `/api`. 🔓 public · 🔒 authenticated · 👑 admin. Un
 | GET | `/` | Overview: conversations, knowledge status (ready/pending materials, key concepts), starter questions, memory count, stats |
 | GET | `/conversations?before&limit` | Conversation list (cursor pagination by `lastMessageAt`) |
 | GET · PATCH · DELETE | `/conversations/:conversationId` | Messages (paginated with `before`) · rename (`titleSource: user`) · delete with messages |
-| POST | `/messages` | Send → **SSE stream** (§14). Body `{clientMessageId, content ≤ 4000, conversationId?, mode: auto|general, action?}`; rate limit 20/min/user |
+| POST | `/messages` | Send → **SSE stream** (§14). Body `{clientMessageId, content ≤ 4000, conversationId?, mode: auto\|general, action?}`; rate limit 20/min/user |
 | POST | `/messages/:messageId/stop` | Stop a running answer (the partial answer is kept as `stopped`) |
 | POST | `/messages/:messageId/feedback` | 👍/👎 + reason + comment → evaluation record; 👎 triggers the LLM judge |
 | GET · DELETE | `/memory` · `/memory/:itemId` | "What Zoya remembers" — list · forget one item |
@@ -545,7 +546,7 @@ All routes are under `/api`. 🔓 public · 🔒 authenticated · 👑 admin. Un
 | GET | `/admin/system/health` | API, DB, storage, AI gateway (chains, breakers, 24 h calls/errors/cost), worker heartbeats + queue, retrieval mode | 1 ✅ (extended in 3) |
 | GET | `/admin/jobs/overview` · `/admin/jobs` · `/admin/jobs/:jobId` | Queue depth, per-type counts & durations, workers, failures · list (type/status/user) · detail (payload, errors, result) | 3 ✅ |
 | POST | `/admin/jobs/:jobId/retry` | Re-queue a failed/cancelled job (audit-logged; resets a failed material to `queued`) | 3 ✅ |
-| GET | `/admin/ai/overview?range=24h|7d|30d` | Calls, errors, fallback rate, p50/p95 latency, TTFT, tokens, cost; by feature, by model, time series, top users, recent failures, gateway state | 3 ✅ |
+| GET | `/admin/ai/overview?range=24h\|7d\|30d` | Calls, errors, fallback rate, p50/p95 latency, TTFT, tokens, cost; by feature, by model, time series, top users, recent failures, gateway state | 3 ✅ |
 | GET | `/admin/ai/calls` · `/admin/ai/calls/:callId` | Call explorer (feature/status/model/user/project/trace) · trace: attempts, request waterfall, Tutor retrieval trace, tools, answer | 3 ✅ |
 | GET | `/admin/ai/config` | Models, thresholds, prompt versions, registered tools and context providers | 3 ✅ |
 | GET | `/admin/ai/evaluations/overview` · `/admin/ai/evaluations` · `/admin/ai/eval-runs/:runId` | Tutor evaluator pass rates, judge averages, scores by prompt version, top rule failures, grounding distribution, offline runs; **assessment quality** (question validity, grading checks, question judge, learner reports, grading backlog) ✅ 4; **recommendation quality** (rule pass rate, aligned / actionable, AI-phrased share, followed / dismissed) ✅ 5 · list (filter by evaluator, verdict, subject) · run detail | 3 ✅ |
@@ -1188,7 +1189,7 @@ TanStack Query caching on the client.
 | Route | Panel | Content | Phase |
 |---|---|---|---|
 | `/` | — | Redirect by session/role | 1 |
-| `/login`, `/register` | Auth | Split-screen auth with the brand panel | 1 |
+| `/login`, `/register` | Auth | Split-screen auth with the brand panel; the sign-in page shows the **demo admin login** with a one-click fill (demo deployment, D36) | 1 (+6) |
 | `/dashboard` | Learner | Home: welcome with the **recommended next action** (one click starts it; rule-based next step as fallback), KPIs, continue learning, recent Projects, **your progress** (overall mastery with coverage, answers this week, improving) and **areas requiring attention**, activity | 1 (+5 ✅) |
 | `/spaces` | Learner | Space grid; create/edit/delete | 1 |
 | `/spaces/[spaceId]` | Learner | Space dashboard: Projects (mastery bar + attention count once assessed), stats, **progress and areas requiring attention**, recent activity; create Project | 1 (+5 ✅) |
@@ -1385,8 +1386,9 @@ and the Space dashboard lacked the progress and attention view the PRD asks for 
 
 **Phase 6 — Evaluation, hardening, docs & deployment** 🟡
 - ✅ Deployed: Vercel (frontend, `vercel.json` headers verified live) + Render (API + worker) + MongoDB Atlas — https://ai-companion-two-jet.vercel.app (2026-09-26)
-- ✅ Submission documents: [AI_USAGE.md](AI_USAGE.md), [DEVELOPMENT_PROMPTS.md](DEVELOPMENT_PROMPTS.md) (template, filled by the developer), [EVALUATION.md](EVALUATION.md), [TESTING.md](TESTING.md), [DEPLOYMENT.md](DEPLOYMENT.md), [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md), [FUTURE_IMPROVEMENTS.md](FUTURE_IMPROVEMENTS.md); README submission index and panel tour
-- ✅ Demo video (5:47, recorded on the live app): [`docs/demo/demo_ai_study_companion.mp4`](demo/demo_ai_study_companion.mp4), linked with chapters from the README
+- ✅ Submission documents: [EVALUATION.md](EVALUATION.md), [TESTING.md](TESTING.md), [DEPLOYMENT.md](DEPLOYMENT.md), [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md), [FUTURE_IMPROVEMENTS.md](FUTURE_IMPROVEMENTS.md); README submission index and panel tour. The **AI Tools and Usage** and **Development Prompts** documents (the actual Claude Code and ChatGPT prompts, verbatim) and a PDF of this architecture document are submitted as separate PDFs
+- ✅ Demo admin login shown in the README and on the sign-in page for reviewers (D36)
+- ✅ Demo video (5:47, recorded on the live app): https://youtu.be/YEGCGngM3lg, linked with chapters from the README
 - ⬜ Offline eval suites for quiz generation/grading and recommendations (Tutor suite + online quiz and recommendation evaluation ✅) · CI · rate-limit/session hardening
 
 ---
@@ -1430,6 +1432,7 @@ and the Space dashboard lacked the progress and attention view the PRD asks for 
 | D33 | Analytics computed on request with windowed aggregations (no cache, no roll-ups) | Always fresh, simple, correct; indexes keep windows of 7–90 days fast for a prototype | Materialised daily metrics / caching at scale |
 | D34 | Day buckets and streaks in UTC | One definition across learners, admins and tests | A learner far from UTC sees days split at local offset; per-user time zones later |
 | D35 | Account profile / preference editing not built | Not required by the PRD; the time went to the learning loop | `preferences` field reserved in `users` |
+| D36 | Publish the demo admin login (README + sign-in page) | Reviewers can open the admin console without a credential hand-off; the admin API is read-only except job retries | Anyone can read learner data on the demo deployment. The password must be unique and rotated after the review (`ADMIN_PASSWORD` on the API host, then `npm run seed:admin`) |
 
 ---
 
@@ -1438,7 +1441,8 @@ and the Space dashboard lacked the progress and attention view the PRD asks for 
 | Date | Version | Change |
 |---|---|---|
 | 2026-09-25 | 1.0 | Initial architecture for all phases. Verified MongoDB Atlas (8.0, replica set) and Gemini model availability for the provided key; chose model defaults and a fallback chain accordingly. Phase 1 started. |
-| 2026-09-26 | 1.5 | Deployed to Vercel + Render + Atlas (live URL in §30). Submission documents added (AI usage, development prompts template, evaluation approach, testing guide, deployment guide, known limitations, future improvements) and linked from the README; demo video added under `docs/demo/`. |
+| 2026-09-26 | 1.6 | The architecture document, *AI Tools and Usage* and *Development Prompts* exported as PDFs for submission; the AI usage and prompts Markdown files removed from the repository. Demo admin login shown in the README and on the sign-in page (D36). Demo video linked from YouTube (the repository copy removed). |
+| 2026-09-26 | 1.5 | Deployed to Vercel + Render + Atlas (live URL in §30). Submission documents added (AI usage, development prompts, evaluation approach, testing guide, deployment guide, known limitations, future improvements) and linked from the README; demo video added under `docs/demo/`. |
 | 2026-09-26 | 1.4 | Phase 5 built — growth analysis (§18), recommendations with rule candidates, validated AI phrasing, evaluation and lifecycle (§19), Project / global analytics and the full Home dashboard, Space progress and attention (§21), admin Engagement and Learning analytics, learner growth block and recommendation quality (§22, §24); repeated-mistake → recommendation workflow; branded 404 and `vercel.json` (§28, §30). Phase 4 suites run green (183) after a fixture fix; 195 tests. App version 0.5.0. Decisions D30–D35. |
 | 2026-09-25 | 1.3 | Phase 4 built — adaptive quiz & mastery: sessions (adaptive / focused / review), evidence-based selection with explanations, grounded generation with rule validation and feedback-driven regeneration, exact / rubric grading with quote-verified key points and server-computed scores, Elo/IRT-style mastery with decay, confidence and exactly-once updates + snapshots, learning workflows (repeated mistakes, post-quiz strengths/weaknesses), Zoya integration (`get_mastery`, `propose_quiz`, mastery and assessment-history context), quiz evaluation (generation/grading rules, question judge, learner reports) and admin views, reconciler coverage for interrupted quiz work, bounded synchronous waits (D28), quiz UI. Evaluator headline cards now count Tutor answers only. Decisions D24–D29. 183 backend tests (MongoDB-backed suites to be run where MongoDB is available — see §31). |
 | 2026-09-25 | 1.2 | Phases 2–3 built and verified: job queue/worker/reconciler, knowledge pipeline, hybrid retrieval, AI gateway, Zoya (grounded streaming Tutor with validated citations, tools, continuity, idempotency, Stop, restart/extractive fallbacks), persistent learning context + provider registry, evaluation (rules, judge, feedback, offline suite), admin AI usage/evaluation/jobs, Tutor UI. Live findings recorded: Gemini schema limitation (D19), thresholds calibrated for gemini-embedding-2 (0.72/0.58), immediate breaker on 503/429, judge moved to primary tier (D21), small-talk override closing an evidence-gate bypass. 139 tests; eval suite 18/18. |
