@@ -9,6 +9,7 @@ import { storage } from '../../storage/storage';
 import { deleteProjectKnowledge } from '../knowledge/knowledge.service';
 import { deleteProjectLearningContext } from '../learning-context/learning-context.service';
 import { deleteProjectQuizData } from '../quiz/quiz.service';
+import { deleteProjectRecommendations } from '../recommendations/recommendations.service';
 import { deleteProjectTutorData } from '../tutor/tutor.service';
 
 /**
@@ -29,7 +30,7 @@ export async function deleteProjectData(project: { _id: Types.ObjectId; ownerId:
   await AiEvaluation.deleteMany({ ownerId: project.ownerId, projectId: project._id });
   // AI usage records stay for cost accounting, but the learner's text is scrubbed from them.
   await AiCall.updateMany({ projectId: project._id }, { $set: { inputPreview: null, outputPreview: null, metadata: {} } });
-  // Later phases: recommendations
+  await deleteProjectRecommendations(project.ownerId, project._id);
   await Project.deleteOne({ _id: project._id, ownerId: project.ownerId });
 
   await deleteBlobs(materials.map((m) => m.storage.fileId.toString()));

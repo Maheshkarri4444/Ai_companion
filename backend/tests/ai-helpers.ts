@@ -66,9 +66,11 @@ export function defaultQuizQuestion(request: QuizRequest): Record<string, unknow
     stem: `Question ${questionCounter}: which statement about ${request.concept} is correct?`,
     options: [
       { id: 'A', text: `${request.concept} follows the rule described in the notes`, rationale: 'Correct: this is what the notes state.' },
-      { id: 'B', text: 'It makes the loss grow on purpose', rationale: 'Wrong: training minimises the loss.' },
-      { id: 'C', text: 'It only applies to test data', rationale: 'Wrong: it is used during training.' },
-      { id: 'D', text: 'It removes the need for a learning rate', rationale: 'Wrong: the learning rate still scales updates.' },
+      // Distractors of comparable length: a correct option that is much longer than the rest is flagged
+      // (correct_option_longest), so an unrealistic fixture would make results depend on the concept's name length.
+      { id: 'B', text: 'It makes the training loss grow on purpose after every single update step', rationale: 'Wrong: training minimises the loss.' },
+      { id: 'C', text: 'It only applies to the held-out test data and never during the training phase', rationale: 'Wrong: it is used during training.' },
+      { id: 'D', text: 'It removes the need for choosing any learning rate when training a network', rationale: 'Wrong: the learning rate still scales updates.' },
     ],
     correctOptionId: 'A',
   };

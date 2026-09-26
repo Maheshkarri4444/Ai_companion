@@ -95,7 +95,7 @@ export function describeNextStep(step: NextStep): StepView {
   }
 }
 
-/** Rule-based guidance for now; replaced by AI recommendations once learning data exists. */
+/** Rule-based next step — the fallback when a Project has no active recommendation yet (e.g. before any material or quiz). */
 export function NextStepCard({ step, variant = "light" }: { step: NextStep; variant?: "light" | "hero" }) {
   const view = describeNextStep(step);
   if (variant === "hero") {

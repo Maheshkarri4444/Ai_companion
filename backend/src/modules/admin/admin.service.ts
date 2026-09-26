@@ -17,7 +17,10 @@ import { Job } from '../../models/job.model';
 import { LearningContext } from '../../models/learningContext.model';
 import { Mastery } from '../../models/mastery.model';
 import { Attempt, QuizSession } from '../../models/quiz.model';
+import { Recommendation } from '../../models/recommendation.model';
 import { storage } from '../../storage/storage';
+import { activeDaySet, streaks } from '../analytics/analytics.service';
+import { computeProjectGrowth } from '../growth/growth.service';
 import { masteryOf, masterySummary } from '../mastery/estimator';
 import { vectorIndexState } from '../knowledge/vector-index';
 import { aiUsageForUser } from './ai-admin.service';
@@ -220,7 +223,7 @@ export async function getUserDetail(userId: string) {
   ]);
   const statusByProject = await materialStatusByProject(projects.map((p) => p._id));
   const projectName = new Map(projects.map((p) => [p._id.toString(), p.name]));
-  const assessments = await assessmentsForUser(owner, projectName);
+  const [assessments, growth] = await Promise.all([assessmentsForUser(owner, projectName), growthForUser(owner, projects, projectName)]);
 
   return {
     user: toUserDto(user),
@@ -236,6 +239,7 @@ export async function getUserDetail(userId: string) {
     },
     aiUsage,
     assessments,
+    growth,
     spaces: spaces.map((space) => {
       const own = projects.filter((p) => p.spaceId.equals(space._id));
       const projectDtos = own.map((p) => toProjectDto(p, statusByProject.get(p._id.toString()) ?? emptyStatusCounts()));
@@ -249,6 +253,57 @@ export async function getUserDetail(userId: string) {
     }),
     materials: materials.map((m) => ({ ...toMaterialDto(m), projectName: projectName.get(m.projectId.toString()) ?? null })),
     recentActivity: recentEvents.map(toActivityDto),
+  };
+}
+
+/** A learner's growth: learning streak, 7-day concept trends per Project, and how they respond to recommendations (PRD §9, §10). */
+async function growthForUser(owner: Types.ObjectId, projects: Array<{ _id: Types.ObjectId }>, projectName: Map<string, string>) {
+  const now = new Date();
+  const DAY_MS = 86_400_000;
+  const [days, recRows, active] = await Promise.all([
+    activeDaySet({ ownerId: owner }, now),
+    Recommendation.aggregate<{ _id: string; n: number }>([{ $match: { ownerId: owner } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+    Recommendation.find({ ownerId: owner, status: 'active' }).sort({ priority: -1 }).limit(6).lean(),
+  ]);
+  const since = new Date(now.getTime() - 29 * DAY_MS).toISOString().slice(0, 10);
+  const byStatus = new Map(recRows.map((r) => [r._id, r.n]));
+  const generated = recRows.reduce((n, r) => n + r.n, 0);
+  const completed = byStatus.get('completed') ?? 0;
+  const perProject = await Promise.all(
+    projects.slice(0, 8).map(async (p) => {
+      const g = await computeProjectGrowth(owner, p._id, 7, now);
+      return {
+        projectId: p._id.toString(),
+        projectName: projectName.get(p._id.toString()) ?? null,
+        counts: g.summary.counts,
+        overallChange: g.summary.overallChange,
+        attention: g.concepts
+          .filter((c) => c.status === 'attention')
+          .sort((a, b) => b.severity - a.severity)
+          .slice(0, 3)
+          .map((c) => ({ name: c.name, mastery: c.mastery, reasons: c.reasonText })),
+      };
+    }),
+  );
+  return {
+    streak: streaks(days, now),
+    activeDays30: [...days].filter((d) => d >= since).length,
+    projects: perProject.filter((p) => p.counts.not_assessed < Object.values(p.counts).reduce((a, b) => a + b, 0)),
+    recommendations: {
+      generated,
+      completed,
+      dismissed: byStatus.get('dismissed') ?? 0,
+      expired: byStatus.get('expired') ?? 0,
+      actRate: generated ? Math.round((completed / generated) * 1000) / 1000 : null,
+      active: active.map((r) => ({
+        id: r._id.toString(),
+        projectName: projectName.get(r.projectId.toString()) ?? null,
+        kind: r.kind,
+        title: r.title,
+        source: r.source,
+        createdAt: r.createdAt,
+      })),
+    },
   };
 }
 

@@ -11,6 +11,7 @@ import { Chunk, Concept } from '../src/models/knowledge.model';
 import { LearningContext } from '../src/models/learningContext.model';
 import { Mastery, MasterySnapshot } from '../src/models/mastery.model';
 import { Attempt, Question, QuizSession } from '../src/models/quiz.model';
+import { Recommendation } from '../src/models/recommendation.model';
 import { reconcileQuizAttempts } from '../src/modules/quiz/quiz.service';
 import { DEFAULT_ANSWER, defaultQuizQuestion, installMockAI, parseSse, seedKnowledge, streamCalls, textParser } from './ai-helpers';
 import { createProject, createSpace, loginAsNewAdmin, registerLearner, useTestDatabase, XRW, type Agent } from './helpers';
@@ -329,6 +330,10 @@ describe('adaptive quiz & mastery', () => {
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({ content: 'Confuses the direction of the weight update with the gradient direction', source: { type: 'quiz' } });
       expect(items[0].conceptIds.map(String)).toEqual([backprop]);
+      // … and the pattern becomes a targeted recommendation (PRD §13 repeated-mistake workflow).
+      expect(await Job.countDocuments({ type: 'recommendations.generate', idempotencyKey: /:mistake:/ })).toBe(1);
+      expect((await drainJobs({ types: ['recommendations.generate'] })).failed).toBe(0);
+      expect(await Recommendation.findOne({ status: 'active', kind: 'fix_repeated_mistake' }).lean()).toMatchObject({ conceptIds: [expect.anything()] });
     });
 
     it('shares mastery with Zoya and lets her offer a focused quiz through a validated tool', async () => {

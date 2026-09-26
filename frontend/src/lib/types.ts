@@ -125,7 +125,10 @@ export type ActivityType =
   | "quiz.started"
   | "quiz.question_answered"
   | "quiz.completed"
-  | "mastery.updated";
+  | "mastery.updated"
+  | "recommendation.generated"
+  | "recommendation.completed"
+  | "recommendation.dismissed";
 
 export interface ActivityEvent {
   id: string;
@@ -164,7 +167,231 @@ export interface HomeDashboard {
   continueLearning: RecentProject | null;
   recentProjects: RecentProject[];
   recentActivity: ActivityEvent[];
+  progress: LearningProgress | null;
+  attention: AttentionArea[];
+  recommendation: (Recommendation & { projectName: string }) | null;
   nextStep: NextStep;
+}
+
+/** Overall progress across several Projects (Home, Space dashboards): mastery with its coverage, 7-day trend counts. */
+export type LearningProgress = CombinedProgress & { improving: number; answersThisWeek: number };
+
+export interface ProjectProgress {
+  projectId: string;
+  overallMastery: number | null;
+  assessedConcepts: number;
+  totalConcepts: number;
+  needsAttention: number;
+  improving: number;
+}
+
+// ── Growth, recommendations & analytics ───────────────────────────────────
+export type GrowthStatus = "improving" | "stable" | "attention" | "not_assessed";
+export type AnalyticsRange = "7d" | "30d" | "90d";
+
+export interface CombinedProgress {
+  overallMastery: number | null;
+  assessedConcepts: number;
+  totalConcepts: number;
+  coverage: number;
+  needsAttention: number;
+  strong: number;
+}
+
+export interface AttentionArea {
+  projectId: string;
+  projectName: string;
+  conceptId: string;
+  name: string;
+  mastery: number | null;
+  reasons: string[];
+  severity: number;
+}
+
+export interface ConceptGrowth {
+  conceptId: string;
+  name: string;
+  importance: number;
+  status: GrowthStatus;
+  mastery: number | null;
+  baseline: number | null;
+  baselineKind: "window_start" | "first_assessment" | null;
+  delta: number | null;
+  trend: number | null;
+  reasons: string[];
+  reasonText: string[];
+  severity: number;
+  evidenceCount: number;
+  confidence: "none" | "low" | "medium" | "high";
+  lastPracticedAt: string | null;
+  weakLevel: { level: string; accuracy: number } | null;
+  strongLevel: { level: string; accuracy: number } | null;
+  series: Array<{ date: string; mastery: number | null }>;
+  source: { materialId: string; materialTitle: string; pages: number[] } | null;
+}
+
+export interface ProjectGrowth {
+  project: { id: string; name: string; learningGoal: string };
+  window: { days: number; from: string; to: string };
+  summary: MasterySummary & {
+    counts: Record<GrowthStatus, number>;
+    overallAtStart: number | null;
+    overallChange: number | null;
+    answersInWindow: number;
+  };
+  concepts: ConceptGrowth[];
+  progressSeries: Array<{ date: string; overallMastery: number | null; assessed: number }>;
+  insights: Array<{ kind: string; conceptId: string | null; text: string }>;
+}
+
+export type RecommendationActionType = "start_quiz" | "resume_quiz" | "review_material" | "ask_tutor" | "upload_material";
+
+export interface Recommendation {
+  id: string;
+  projectId: string;
+  kind: string;
+  title: string;
+  rationale: string;
+  action: { type: RecommendationActionType; params: Record<string, unknown>; label: string };
+  concepts: Array<{ id: string; name: string }>;
+  review: { materialTitle: string; pages: string; materialId: string | null; page: number | null } | null;
+  priority: number;
+  source: "rules" | "ai";
+  status: string;
+  createdAt: string;
+}
+
+export interface ActivityDay {
+  date: string;
+  total: number;
+  tutor: number;
+  answers: number;
+  materials: number;
+  quizzes: number;
+}
+
+export interface ScoreRow {
+  key: string;
+  answered: number;
+  avgScore: number;
+}
+
+export interface ProjectAnalytics {
+  project: { id: string; name: string };
+  range: { key: AnalyticsRange; days: number; from: string; to: string };
+  kpis: {
+    activeDays: number;
+    streak: { current: number; longest: number };
+    tutorQuestions: number;
+    quizzesCompleted: number;
+    answered: number;
+    accuracy: number | null;
+    avgScore: number | null;
+    studyMinutes: number;
+    overallMastery: number | null;
+    overallChange: number | null;
+    coverage: number;
+  };
+  activity: { series: ActivityDay[]; byType: Array<{ type: string; count: number }> };
+  assessment: {
+    answered: number;
+    accuracy: number | null;
+    avgScore: number | null;
+    byType: ScoreRow[];
+    byDifficulty: ScoreRow[];
+    byLevel: ScoreRow[];
+    series: Array<{ date: string; answered: number; avgScore: number | null }>;
+  };
+  mastery: {
+    summary: ProjectGrowth["summary"];
+    bands: Record<"not_assessed" | "needs_attention" | "developing" | "strong", number>;
+    progressSeries: ProjectGrowth["progressSeries"];
+  };
+  conceptTrends: {
+    counts: Record<GrowthStatus, number>;
+    improving: Array<{ conceptId: string; name: string; mastery: number | null; delta: number | null; status: GrowthStatus }>;
+    declining: Array<{ conceptId: string; name: string; mastery: number | null; delta: number | null; status: GrowthStatus }>;
+  };
+  ai: {
+    tutorQuestions: number;
+    tutorAnswers: number;
+    conversations: number;
+    groundedRate: number | null;
+    grounding: Array<{ status: string; count: number }>;
+    calls: number;
+    tokens: number;
+    costUsd: number;
+  };
+}
+
+export interface GlobalAnalytics {
+  range: { key: AnalyticsRange; days: number; from: string; to: string };
+  kpis: CombinedProgress & {
+    spaces: number;
+    projects: number;
+    readyMaterials: number;
+    tutorQuestions: number;
+    quizzesCompleted: number;
+    answered: number;
+    accuracy: number | null;
+    avgScore: number | null;
+    studyMinutes: number;
+    activeDays: number;
+    streak: { current: number; longest: number };
+  };
+  activity: { series: ActivityDay[]; byType: Array<{ type: string; count: number }> };
+  assessment: { byType: ScoreRow[]; byDifficulty: ScoreRow[]; series: Array<{ date: string; answered: number; avgScore: number | null }> };
+  perSpace: Array<CombinedProgress & { id: string; name: string; color: SpaceColor; icon: SpaceIcon; projects: number; answered: number }>;
+  perProject: Array<{
+    id: string;
+    name: string;
+    space: SpaceSummary | null;
+    overallMastery: number | null;
+    coverage: number;
+    assessedConcepts: number;
+    totalConcepts: number;
+    needsAttention: number;
+    answered: number;
+    avgScore: number | null;
+    tutorQuestions: number;
+    lastActivityAt: string;
+  }>;
+}
+
+export interface AdminEngagement {
+  range: { key: AnalyticsRange; days: number };
+  kpis: {
+    learners: number;
+    dau: number;
+    wau: number;
+    mau: number;
+    stickiness: number | null;
+    activeInRange: number;
+    newLearners: number;
+    retention7d: number | null;
+    retentionCohort: number;
+  };
+  series: Array<{ date: string; activeUsers: number; events: number; signups: number }>;
+  adoption: Array<{ feature: string; type: string; users: number; events: number; share: number | null }>;
+  topLearners: Array<{ user: UserRef; events: number; lastActiveAt: string }>;
+}
+
+export interface AdminLearning {
+  range: { key: AnalyticsRange; days: number };
+  quizzes: { started: number; completed: number; completionRate: number | null };
+  answers: {
+    answered: number;
+    learners: number;
+    accuracy: number | null;
+    avgScore: number | null;
+    byType: Array<{ type: string; answered: number; avgScore: number }>;
+    byDifficulty: Array<{ difficulty: number; answered: number; avgScore: number }>;
+    series: Array<{ date: string; answered: number; avgScore: number | null }>;
+  };
+  mastery: { assessedConcepts: number; bands: { needs_attention: number; developing: number; strong: number } };
+  hardestConcepts: Array<{ conceptId: string; name: string; project: string | null; answered: number; avgScore: number; learners: number }>;
+  recommendations: { generated: number; acted: number; dismissed: number; actRate: number | null };
+  tutor: { answers: number; grounding: Array<{ status: string; count: number }>; groundedRate: number | null };
 }
 
 export interface SpaceDashboard {
@@ -172,6 +399,9 @@ export interface SpaceDashboard {
   projects: Project[];
   stats: { projectCount: number; materialCount: number; totalBytes: number; materialsByStatus: StatusCounts };
   recentActivity: ActivityEvent[];
+  progress: LearningProgress | null;
+  attention: AttentionArea[];
+  projectProgress: ProjectProgress[];
 }
 
 export interface ProjectDashboard {
@@ -522,9 +752,30 @@ export interface AdminUserDetail {
     feedback: { up: number; down: number };
   };
   assessments: AdminAssessments;
+  growth: AdminUserGrowth;
   spaces: Array<Space & { projects: Project[] }>;
   materials: Array<Material & { projectName: string | null }>;
   recentActivity: ActivityEvent[];
+}
+
+export interface AdminUserGrowth {
+  streak: { current: number; longest: number };
+  activeDays30: number;
+  projects: Array<{
+    projectId: string;
+    projectName: string | null;
+    counts: Record<GrowthStatus, number>;
+    overallChange: number | null;
+    attention: Array<{ name: string; mastery: number | null; reasons: string[] }>;
+  }>;
+  recommendations: {
+    generated: number;
+    completed: number;
+    dismissed: number;
+    expired: number;
+    actRate: number | null;
+    active: Array<{ id: string; projectName: string | null; kind: string; title: string; source: "rules" | "ai"; createdAt: string }>;
+  };
 }
 
 export interface AdminAssessments {
@@ -758,6 +1009,21 @@ export interface EvaluationOverview {
   recentFailures: EvaluationRow[];
   offlineRuns: EvalRunSummary[];
   assessment: AssessmentQuality;
+  recommendations: RecommendationQuality;
+}
+
+/** Recommendation quality: rule checks on the text learners read, AI phrasing share, and learner response. */
+export interface RecommendationQuality {
+  checked: number;
+  passRate: number | null;
+  alignedRate: number | null;
+  actionableRate: number | null;
+  topFlags: Array<{ flag: string; count: number }>;
+  generated: number;
+  aiPhrasedRate: number | null;
+  followed: number;
+  dismissed: number;
+  followRate: number | null;
 }
 
 /** Quiz generation and grading quality (online evaluation of the assessment features). */

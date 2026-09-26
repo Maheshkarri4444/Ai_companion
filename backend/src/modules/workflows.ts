@@ -7,6 +7,7 @@ import { enqueueJudge } from './evaluation/evaluation.jobs';
 import { sampled } from './evaluation/evaluation.service';
 import { enqueueMaterialProcessing } from './knowledge/knowledge.service';
 import { onQuestionAnswered, onQuizCompleted } from './quiz/learning';
+import { enqueueRecommendationRefresh } from './recommendations/recommendations.service';
 import { summaryNeeded } from './tutor/tutor.jobs';
 
 /**
@@ -77,9 +78,22 @@ export function registerWorkflows() {
     });
   });
 
-  // Repeated-mistake workflow: Repeated mistake → identify pattern → update learning context
+  // Repeated-mistake workflow: Repeated mistake → identify pattern → update learning context → targeted recommendation
+  // (the `learning.repeated_mistake` job enqueues the recommendation refresh once a pattern is stored).
   onActivity('quiz.question_answered', onQuestionAnswered);
 
   // Learning workflow: Quiz completed → evaluate → (mastery already updated) → detect weakness → learning context
   onActivity('quiz.completed', onQuizCompleted);
+
+  // … → generate insight → recommend the next action. Also refreshed when new knowledge arrives.
+  // (Idempotent per event; a refresh is a no-op when the learner's state did not change.)
+  onActivity('quiz.completed', async (event) => {
+    if (!event.projectId) return;
+    const sessionId = String((event.metadata as { sessionId?: string }).sessionId ?? event._id);
+    await enqueueRecommendationRefresh({ ownerId: event.ownerId, projectId: event.projectId, reason: `quiz:${sessionId}` });
+  });
+  onActivity('material.processed', async (event) => {
+    if (!event.projectId) return;
+    await enqueueRecommendationRefresh({ ownerId: event.ownerId, projectId: event.projectId, reason: `material:${event.materialId?.toString() ?? event._id.toString()}` });
+  });
 }

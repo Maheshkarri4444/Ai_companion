@@ -1,8 +1,10 @@
 "use client";
 
-import { ArrowRight, FileText, FolderKanban, HardDrive, Layers, LineChart, Lock, Plus, Sparkles, Target } from "lucide-react";
+import { ArrowRight, FileText, FolderKanban, HardDrive, Layers, Plus, Sparkles, Target } from "lucide-react";
 import Link from "next/link";
 import { ActivityFeed } from "@/components/activity-feed";
+import { LearningInsights } from "@/components/learning/learning-insights";
+import { useFollowRecommendation } from "@/components/learning/recommendation-list";
 import { NextStepCard } from "@/components/next-step-card";
 import { SpaceTile } from "@/components/space-visuals";
 import { buttonClasses } from "@/components/ui/button";
@@ -12,6 +14,7 @@ import { StatCard } from "@/components/ui/misc";
 import { MaterialStatusBar, ProjectCard } from "@/components/workspace-cards";
 import { formatBytes, formatNumber, greeting, pluralize, timeAgo } from "@/lib/format";
 import { useDashboard, useMe } from "@/lib/queries";
+import type { HomeDashboard } from "@/lib/types";
 
 function DashboardSkeleton() {
   return (
@@ -59,7 +62,7 @@ export default function DashboardPage() {
                 : "Let's set up your first learning journey."}
             </p>
           </div>
-          <NextStepCard step={nextStep} variant="hero" />
+          {data.recommendation ? <HeroRecommendation recommendation={data.recommendation} /> : <NextStepCard step={nextStep} variant="hero" />}
         </div>
       </section>
 
@@ -137,20 +140,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="space-y-6">
-          <Card className="overflow-hidden">
-            <CardHeader title="Learning insights" icon={<LineChart className="size-4" />} />
-            <CardBody>
-              <div className="rounded-xl border border-dashed border-line-strong bg-canvas/60 p-4">
-                <p className="flex items-center gap-2 text-sm font-medium text-ink">
-                  <Lock className="size-4 text-blue-500" /> Unlocks as you learn
-                </p>
-                <p className="mt-1 text-sm leading-relaxed text-muted">
-                  Overall progress, areas needing attention and AI recommendations appear once you start learning with the
-                  Tutor and quizzes.
-                </p>
-              </div>
-            </CardBody>
-          </Card>
+          <LearningInsights progress={data.progress} attention={data.attention} />
           <Card>
             <CardHeader title="Recent activity" />
             <CardBody className="pt-3">
@@ -159,6 +149,33 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** "What should I do next?" — the top recommendation of the most recent Project, followed in one click. */
+function HeroRecommendation({ recommendation }: { recommendation: NonNullable<HomeDashboard["recommendation"]> }) {
+  const { follow, busy } = useFollowRecommendation(recommendation.projectId);
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/15 text-cyan-200">
+          <Sparkles className="size-[18px]" />
+        </span>
+        <div>
+          <p className="text-xs font-semibold tracking-wider text-cyan-200/90 uppercase">Recommended next action · {recommendation.projectName}</p>
+          <p className="mt-0.5 font-medium text-white">{recommendation.title}</p>
+          <p className="mt-0.5 text-sm text-blue-100/75">{recommendation.rationale}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => follow(recommendation)}
+        disabled={busy === recommendation.id}
+        className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50 disabled:opacity-60"
+      >
+        {recommendation.action.label} <ArrowRight className="size-4" />
+      </button>
     </div>
   );
 }

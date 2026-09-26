@@ -3,6 +3,13 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import type {
+  AdminEngagement,
+  AdminLearning,
+  AnalyticsRange,
+  GlobalAnalytics,
+  ProjectAnalytics,
+  ProjectGrowth,
+  Recommendation,
   AiCallDetail,
   AiCallSummary,
   AiConfiguration,
@@ -189,6 +196,52 @@ export function useForgetMemory(projectId: string) {
     mutationFn: (itemId: string) => api.delete(`/projects/${projectId}/tutor/memory/${itemId}`),
     onSuccess: () =>
       Promise.all([client.invalidateQueries({ queryKey: qk.memory(projectId) }), client.invalidateQueries({ queryKey: qk.tutor(projectId) })]),
+  });
+}
+
+// ── Growth, recommendations & analytics ───────────────────────────────────
+export function useProjectGrowth(projectId: string, window: AnalyticsRange) {
+  return useQuery({
+    queryKey: ["projects", projectId, "growth", window],
+    queryFn: () => api.get<ProjectGrowth>(`/projects/${projectId}/growth?window=${window}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useRecommendations(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["projects", projectId, "recommendations"],
+    queryFn: () => api.get<{ items: Recommendation[]; history: { completed: number; dismissed: number } }>(`/projects/${projectId}/recommendations`),
+    enabled,
+  });
+}
+
+export function useRecommendationAction(projectId: string) {
+  const client = useQueryClient();
+  const invalidate = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: ["projects", projectId, "recommendations"] }),
+      client.invalidateQueries({ queryKey: qk.dashboard }),
+    ]);
+  return {
+    act: useMutation({ mutationFn: (id: string) => api.post(`/projects/${projectId}/recommendations/${id}/act`), onSuccess: invalidate }),
+    dismiss: useMutation({ mutationFn: (id: string) => api.post(`/projects/${projectId}/recommendations/${id}/dismiss`), onSuccess: invalidate }),
+  };
+}
+
+export function useProjectAnalytics(projectId: string, range: AnalyticsRange) {
+  return useQuery({
+    queryKey: ["projects", projectId, "analytics", range],
+    queryFn: () => api.get<ProjectAnalytics>(`/projects/${projectId}/analytics?range=${range}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useGlobalAnalytics(range: AnalyticsRange) {
+  return useQuery({
+    queryKey: ["analytics", range],
+    queryFn: () => api.get<GlobalAnalytics>(`/analytics?range=${range}`),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -439,6 +492,8 @@ export const useEvaluationOverview = (range: string) => useAdminQuery<Evaluation
 export const useEvaluations = (params: Params) => useAdminQuery<Paginated<EvaluationRow>>("/ai/evaluations", params);
 export const useEvalRun = (runId: string | null) =>
   useQuery({ queryKey: [...qk.admin, "eval-run", runId], queryFn: () => api.get<EvalRunDetail>(`/admin/ai/eval-runs/${runId}`), enabled: Boolean(runId) });
+export const useAdminEngagement = (range: string) => useAdminQuery<AdminEngagement>("/engagement", { range });
+export const useAdminLearning = (range: string) => useAdminQuery<AdminLearning>("/learning", { range });
 export const useJobsOverview = () => useAdminQuery<JobsOverview>("/jobs/overview", undefined, { refetchInterval: 5_000 });
 export const useJobs = (params: Params) => useAdminQuery<Paginated<JobRow>>("/jobs", params, { refetchInterval: 5_000 });
 export const useJob = (jobId: string | null) =>

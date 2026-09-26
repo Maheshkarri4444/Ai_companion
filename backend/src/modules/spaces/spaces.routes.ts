@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { handler } from '../../lib/handler';
 import { authenticate } from '../../middleware/authenticate';
+import { getSpaceLearning } from '../activity/dashboard.service';
 import { createProjectBody } from '../projects/projects.schemas';
 import { createProject, listProjects } from '../projects/projects.service';
 import { createSpaceBody, spaceParams, updateSpaceBody } from './spaces.schemas';
@@ -24,7 +25,11 @@ spacesRouter.post(
 
 spacesRouter.get(
   '/:spaceId',
-  handler({ params: spaceParams }, ({ auth, params }) => getSpaceDashboard(auth.userId, params.spaceId)),
+  handler({ params: spaceParams }, async ({ auth, params }) => {
+    // The learning view is owner-scoped on its own; the dashboard call performs the ownership check (404).
+    const [dashboard, learning] = await Promise.all([getSpaceDashboard(auth.userId, params.spaceId), getSpaceLearning(auth.userId, params.spaceId)]);
+    return { ...dashboard, ...learning };
+  }),
 );
 
 spacesRouter.patch(

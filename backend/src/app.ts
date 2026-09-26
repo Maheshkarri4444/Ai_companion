@@ -12,6 +12,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { requestContext } from './middleware/requestContext';
 import { activityRouter, dashboardRouter } from './modules/activity/activity.routes';
 import { adminRouter } from './modules/admin/admin.routes';
+import { globalAnalyticsRouter } from './modules/analytics/analytics.routes';
 import { authRouter } from './modules/auth/auth.routes';
 import { healthRouter } from './modules/health/health.routes';
 import { projectsRouter } from './modules/projects/projects.routes';
@@ -57,6 +58,7 @@ export function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/activity', activityRouter);
+  app.use('/api/analytics', globalAnalyticsRouter);
   app.use('/api/spaces', spacesRouter);
   app.use('/api/projects', projectsRouter);
   app.use('/api/admin', adminRouter);

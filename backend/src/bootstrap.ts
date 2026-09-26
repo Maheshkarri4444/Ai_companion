@@ -5,6 +5,7 @@ import { registerCoreContextProviders } from './modules/learning-context/provide
 import { registerQuizContextProviders } from './modules/quiz/providers';
 import { registerQuizJobs } from './modules/quiz/quiz.jobs';
 import { registerQuizTutorTools } from './modules/quiz/tools';
+import { registerRecommendationModule } from './modules/recommendations/recommendations.service';
 import { registerCoreTutorTools } from './modules/tutor/tools';
 import { registerTutorJobs } from './modules/tutor/tutor.jobs';
 import { registerWorkflows } from './modules/workflows';
@@ -28,4 +29,5 @@ export function registerModules() {
   registerQuizContextProviders();
   registerCoreTutorTools();
   registerQuizTutorTools();
+  registerRecommendationModule();
 }

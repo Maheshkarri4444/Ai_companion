@@ -14,12 +14,14 @@ import {
   FolderPen,
   FolderMinus,
   Layers,
+  Lightbulb,
   ListChecks,
   LogIn,
   TrendingDown,
   TrendingUp,
   Trophy,
   UserPlus,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -173,6 +175,30 @@ export function describeActivity(event: Pick<ActivityEvent, "type" | "metadata">
         ),
       };
     }
+    case "recommendation.generated": {
+      const count = Array.isArray(m.titles) ? m.titles.length : 0;
+      return {
+        Icon: Lightbulb,
+        tone: "bg-blue-50 text-blue-600",
+        text: (
+          <>
+            {count === 1 ? "1 new recommendation" : `${count} new recommendations`} for {q(m.projectName)}
+          </>
+        ),
+      };
+    }
+    case "recommendation.completed":
+      return {
+        Icon: Lightbulb,
+        tone: "bg-emerald-50 text-emerald-600",
+        text: <>Followed a recommendation: {q(m.title)}</>,
+      };
+    case "recommendation.dismissed":
+      return {
+        Icon: X,
+        tone: "bg-slate-100 text-slate-500",
+        text: <>Dismissed a recommendation: {q(m.title)}</>,
+      };
     default:
       return { Icon: Layers, tone: "bg-slate-100 text-slate-500", text: <>{(event.type as string).replace(/[._]/g, " ")}</> };
   }
@@ -199,6 +225,9 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   "quiz.question_answered": "Quiz answer",
   "quiz.completed": "Quiz completed",
   "mastery.updated": "Mastery changed",
+  "recommendation.generated": "Recommendations generated",
+  "recommendation.completed": "Recommendation followed",
+  "recommendation.dismissed": "Recommendation dismissed",
 };
 
 function eventHref(event: ActivityEvent): string | undefined {
@@ -208,6 +237,7 @@ function eventHref(event: ActivityEvent): string | undefined {
     const sessionId = str(event.metadata?.sessionId);
     return `/projects/${event.projectId}/quiz${sessionId ? `/${sessionId}` : ""}`;
   }
+  if (event.type.startsWith("recommendation.") && event.projectId) return `/projects/${event.projectId}/growth`;
   if (event.type.startsWith("tutor.") && event.projectId) {
     const conversationId = str(event.metadata?.conversationId);
     return `/projects/${event.projectId}/tutor${conversationId ? `?c=${conversationId}` : ""}`;

@@ -14,6 +14,7 @@ import { Job } from '../../models/job.model';
 import { Message } from '../../models/message.model';
 import { Project } from '../../models/project.model';
 import { Attempt } from '../../models/quiz.model';
+import { Recommendation } from '../../models/recommendation.model';
 import { registeredContextProviders } from '../learning-context/providers';
 import { registeredTutorTools } from '../tutor/tools';
 import { userRefs } from './admin.service';
@@ -272,7 +273,7 @@ export async function getEvaluationOverview(query: RangeQuery) {
   // The headline evaluator cards describe Zoya's answers; quiz items have their own section (`assessment`), while the
   // verdict series and the failure list cover every evaluated subject.
   const tutor = { ...match, subjectType: 'tutor_message' };
-  const [byEvaluator, judgeAverages, byPromptVersion, ruleFlags, grounding, series, recentFailures, runs, assessment] = await Promise.all([
+  const [byEvaluator, judgeAverages, byPromptVersion, ruleFlags, grounding, series, recentFailures, runs, assessment, recommendations] = await Promise.all([
     AiEvaluation.aggregate<{ _id: { evaluator: string; verdict: string }; n: number }>([
       { $match: tutor },
       { $group: { _id: { evaluator: '$evaluator', verdict: '$verdict' }, n: { $sum: 1 } } },
@@ -330,6 +331,7 @@ export async function getEvaluationOverview(query: RangeQuery) {
     AiEvaluation.find({ ...match, verdict: 'fail' }).sort({ createdAt: -1 }).limit(8).lean(),
     EvalRun.find({}, { cases: 0 }).sort({ createdAt: -1 }).limit(10).lean(),
     assessmentQuality(match),
+    recommendationQuality(match),
   ]);
 
   const evaluators = ['rules', 'llm_judge', 'learner_feedback', 'offline_suite'].map((evaluator) => {
@@ -365,6 +367,7 @@ export async function getEvaluationOverview(query: RangeQuery) {
     groundingDistribution: grounding.map((g) => ({ status: g._id ?? 'unknown', count: g.n })),
     series: keys.map((key) => ({ bucket: key, pass: bySeries.get(key)?.pass ?? 0, warn: bySeries.get(key)?.warn ?? 0, fail: bySeries.get(key)?.fail ?? 0 })),
     assessment,
+    recommendations,
     recentFailures: recentFailures.map(toEvaluationDto),
     offlineRuns: runs.map((r) => ({
       id: r._id.toString(),
@@ -453,6 +456,46 @@ async function assessmentQuality(match: Record<string, unknown>) {
       : null,
     learnerReports: reports,
     gradingBacklog: { pending, failed },
+  };
+}
+
+/**
+ * Recommendation quality (PRD §14 "relevance, actionability, alignment with the learner state"): rule checks on every
+ * recommendation as the learner reads it, how many the model phrased (vs the template fallback), and how learners responded.
+ */
+async function recommendationQuality(match: Record<string, unknown>) {
+  const rules = { ...match, subjectType: 'recommendation', evaluator: 'rules' };
+  const [checks, flags, byStatus, bySource] = await Promise.all([
+    AiEvaluation.aggregate<{ n: number; pass: number; aligned: number; actionable: number }>([
+      { $match: rules },
+      {
+        $group: {
+          _id: null,
+          n: { $sum: 1 },
+          pass: { $sum: { $cond: [{ $eq: ['$verdict', 'pass'] }, 1, 0] } },
+          aligned: { $avg: '$scores.aligned' },
+          actionable: { $avg: '$scores.actionable' },
+        },
+      },
+    ]),
+    topFlags(rules),
+    Recommendation.aggregate<{ _id: string; n: number }>([{ $match: match }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+    Recommendation.aggregate<{ _id: string; n: number }>([{ $match: match }, { $group: { _id: '$source', n: { $sum: 1 } } }]),
+  ]);
+  const c = checks[0];
+  const generated = byStatus.reduce((n, r) => n + r.n, 0);
+  const status = (s: string) => byStatus.find((r) => r._id === s)?.n ?? 0;
+  return {
+    checked: c?.n ?? 0,
+    passRate: c?.n ? round(c.pass / c.n, 4) : null,
+    alignedRate: c?.n ? round(c.aligned, 4) : null,
+    actionableRate: c?.n ? round(c.actionable, 4) : null,
+    topFlags: flags.map((f) => ({ flag: f._id, count: f.n })),
+    generated,
+    aiPhrasedRate: generated ? round((bySource.find((r) => r._id === 'ai')?.n ?? 0) / generated, 4) : null,
+    followed: status('completed'),
+    dismissed: status('dismissed'),
+    followRate: generated ? round(status('completed') / generated, 4) : null,
   };
 }
 

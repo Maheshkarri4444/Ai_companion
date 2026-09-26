@@ -6,7 +6,6 @@ import {
   FolderKanban,
   LayoutDashboard,
   ListChecks,
-  Lock,
   MessageSquare,
   MoreHorizontal,
   Pencil,
@@ -35,8 +34,8 @@ const tabs = [
   { segment: "materials", label: "Materials", icon: FileText },
   { segment: "tutor", label: "AI Tutor", icon: MessageSquare },
   { segment: "quiz", label: "Quiz", icon: ListChecks },
-  { segment: "growth", label: "Growth", icon: TrendingUp, soon: true },
-  { segment: "analytics", label: "Analytics", icon: ChartColumn, soon: true },
+  { segment: "growth", label: "Growth", icon: TrendingUp },
+  { segment: "analytics", label: "Analytics", icon: ChartColumn },
 ];
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
@@ -131,38 +130,23 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
 
       <nav className="scrollbar-thin mt-6 -mx-4 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0" aria-label="Project sections">
         <ul className="flex min-w-max gap-1">
-          {tabs.map(({ segment, label, icon: Icon, soon }) => {
+          {tabs.map(({ segment, label, icon: Icon }) => {
             const href = segment ? `${base}/${segment}` : base;
             // Sections own their sub-routes (e.g. a quiz session under /quiz); Overview is the exact path only.
-            const active = !soon && (pathname === href || (Boolean(segment) && pathname.startsWith(`${href}/`)));
-            const content = (
-              <>
-                <Icon className="size-4" />
-                {label}
-                {soon && <Lock className="size-3 opacity-60" />}
-              </>
-            );
+            const active = pathname === href || (Boolean(segment) && pathname.startsWith(`${href}/`));
             return (
               <li key={label}>
-                {soon ? (
-                  <span
-                    className="flex cursor-default items-center gap-2 border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-slate-400"
-                    title="Unlocks in a later build"
-                  >
-                    {content}
-                  </span>
-                ) : (
-                  <Link
-                    href={href}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
-                      active ? "border-blue-600 text-blue-700" : "border-transparent text-muted hover:border-line-strong hover:text-ink",
-                    )}
-                  >
-                    {content}
-                  </Link>
-                )}
+                <Link
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
+                    active ? "border-blue-600 text-blue-700" : "border-transparent text-muted hover:border-line-strong hover:text-ink",
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {label}
+                </Link>
               </li>
             );
           })}

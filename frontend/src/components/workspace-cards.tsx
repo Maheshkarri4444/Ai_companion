@@ -2,11 +2,12 @@
 
 import { FileText, FolderKanban, MoreHorizontal, Pencil, Target, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { MasteryBar, pct } from "@/components/quiz/mastery";
 import { SpaceTile } from "@/components/space-visuals";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { pluralize, timeAgo } from "@/lib/format";
-import type { Project, RecentProject, Space, StatusCounts } from "@/lib/types";
+import type { Project, ProjectProgress, RecentProject, Space, StatusCounts } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function SpaceCard({ space, onEdit, onDelete }: { space: Space; onEdit: () => void; onDelete: () => void }) {
@@ -69,7 +70,8 @@ export function MaterialStatusBar({ counts, className }: { counts: StatusCounts;
   );
 }
 
-export function ProjectCard({ project, showSpace }: { project: Project | RecentProject; showSpace?: boolean }) {
+export function ProjectCard({ project, showSpace, progress }: { project: Project | RecentProject; showSpace?: boolean; progress?: ProjectProgress }) {
+  const assessed = progress && progress.assessedConcepts > 0;
   const space = "space" in project ? project.space : null;
   return (
     <Link
@@ -88,11 +90,29 @@ export function ProjectCard({ project, showSpace }: { project: Project | RecentP
         <span className="line-clamp-2">{project.learningGoal}</span>
       </p>
       <div className="mt-auto space-y-2 pt-4">
-        <MaterialStatusBar counts={project.materialStatusCounts} />
-        <div className="flex items-center justify-between text-xs text-muted">
-          <span>{pluralize(project.materialCount, "material")}</span>
-          <span>Active {timeAgo(project.lastActivityAt)}</span>
-        </div>
+        {assessed ? (
+          <>
+            <div className="flex items-center gap-2">
+              <MasteryBar value={progress.overallMastery} className="flex-1" />
+              <span className="w-9 text-right text-xs font-semibold text-ink tabular-nums">{pct(progress.overallMastery)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-muted">
+              <span>
+                {progress.assessedConcepts}/{progress.totalConcepts} concepts
+                {progress.needsAttention > 0 ? <span className="text-rose-600"> · {progress.needsAttention} need attention</span> : " · on track"}
+              </span>
+              <span className="shrink-0">Active {timeAgo(project.lastActivityAt)}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <MaterialStatusBar counts={project.materialStatusCounts} />
+            <div className="flex items-center justify-between text-xs text-muted">
+              <span>{pluralize(project.materialCount, "material")}</span>
+              <span>Active {timeAgo(project.lastActivityAt)}</span>
+            </div>
+          </>
+        )}
       </div>
     </Link>
   );

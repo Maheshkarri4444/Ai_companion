@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import { projectAnalyticsRouter } from '../analytics/analytics.routes';
+import { growthRouter } from '../growth/growth.routes';
+import { recommendationsRouter } from '../recommendations/recommendations.routes';
 import { handler } from '../../lib/handler';
 import { authenticate } from '../../middleware/authenticate';
 import { knowledgeRouter } from '../knowledge/knowledge.routes';
@@ -43,5 +46,8 @@ projectsRouter.use('/:projectId/materials', materialsRouter);
 projectsRouter.use('/:projectId/tutor', tutorRouter);
 projectsRouter.use('/:projectId/quizzes', quizRouter);
 projectsRouter.use('/:projectId/mastery', masteryRouter);
+projectsRouter.use('/:projectId/growth', growthRouter);
+projectsRouter.use('/:projectId/recommendations', recommendationsRouter);
+projectsRouter.use('/:projectId/analytics', projectAnalyticsRouter);
 // Knowledge routes (concepts, page text, processing retry) live beside materials under the Project.
 projectsRouter.use('/:projectId', knowledgeRouter);

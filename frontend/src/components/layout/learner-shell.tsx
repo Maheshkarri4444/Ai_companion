@@ -15,7 +15,7 @@ const sections: NavSection[] = [
     items: [
       { href: "/dashboard", label: "Home", icon: House, exact: true },
       { href: "/spaces", label: "Spaces", icon: Layers },
-      { href: "/analytics", label: "Analytics", icon: ChartColumn, soon: true },
+      { href: "/analytics", label: "Analytics", icon: ChartColumn },
     ],
   },
 ];

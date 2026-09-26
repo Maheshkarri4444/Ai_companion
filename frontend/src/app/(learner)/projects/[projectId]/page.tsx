@@ -1,9 +1,10 @@
 "use client";
 
-import { ArrowRight, Check, ChartColumn, Clock, FileText, HardDrive, Lightbulb, ListChecks, Lock, MessageSquare, TrendingUp, Upload, type LucideIcon } from "lucide-react";
+import { ArrowRight, Check, ChartColumn, Clock, FileText, HardDrive, Lightbulb, ListChecks, Lock, MessageSquare, Sparkles, TrendingUp, Upload, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ActivityFeed } from "@/components/activity-feed";
+import { RecommendationList } from "@/components/learning/recommendation-list";
 import { NextStepCard } from "@/components/next-step-card";
 import { MasteryBadge, MasteryBar, MasteryOverview, pct } from "@/components/quiz/mastery";
 import { MaterialStatusBadge } from "@/components/ui/badge";
@@ -13,33 +14,51 @@ import { EmptyState } from "@/components/ui/feedback";
 import { StatCard } from "@/components/ui/misc";
 import { ZoyaAvatar } from "@/components/zoya/zoya-avatar";
 import { formatBytes, formatNumber, pluralize, timeAgo } from "@/lib/format";
-import { useConcepts, useProject } from "@/lib/queries";
+import { useConcepts, useProject, useRecommendations } from "@/lib/queries";
 import type { Concept, ProjectDashboard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type StepState = "done" | "current" | "locked";
+type StepState = "done" | "current" | "upcoming" | "locked";
+
+/** A learning-path step links to its section unless it is still locked. */
+function PathStep({ href, children }: { href: string | null; children: React.ReactNode }) {
+  const className = "flex items-center gap-3 rounded-xl sm:flex-col sm:text-center";
+  return href ? (
+    <Link href={href} className={cn(className, "group transition-opacity hover:opacity-80")}>
+      {children}
+    </Link>
+  ) : (
+    <div className={className}>{children}</div>
+  );
+}
 
 function LearningPath({
+  projectId,
   materialCount,
   pending,
   ready,
   learning,
 }: {
+  projectId: string;
   materialCount: number;
   pending: number;
   ready: number;
   learning: ProjectDashboard["learning"];
 }) {
-  const { tutorUsed, quizzesCompleted, activeQuiz, accuracy } = learning;
-  const steps: Array<{ label: string; detail: string; icon: LucideIcon; state: StepState; lockedHint?: string }> = [
+  const { tutorUsed, quizzesCompleted, activeQuiz, accuracy, mastery } = learning;
+  const assessed = mastery.assessedConcepts > 0;
+  const base = `/projects/${projectId}`;
+  const steps: Array<{ label: string; detail: string; icon: LucideIcon; state: StepState; href: string; lockedHint?: string }> = [
     {
       label: "Materials",
+      href: `${base}/materials`,
       detail: materialCount === 0 ? "Upload your PDFs" : pending > 0 ? `${pending} processing` : `${materialCount} added`,
       icon: FileText,
       state: materialCount > 0 && ready > 0 ? "done" : "current",
     },
     {
       label: "AI Tutor",
+      href: `${base}/tutor`,
       detail: tutorUsed ? "Learning with Zoya" : "Ask Zoya — cited answers",
       icon: MessageSquare,
       state: tutorUsed ? "done" : ready > 0 ? "current" : "locked",
@@ -47,6 +66,7 @@ function LearningPath({
     },
     {
       label: "Quiz",
+      href: `${base}/quiz`,
       detail: activeQuiz
         ? `In progress · ${activeQuiz.answered}/${activeQuiz.target}`
         : quizzesCompleted > 0
@@ -56,13 +76,25 @@ function LearningPath({
       state: quizzesCompleted > 0 ? "done" : ready > 0 ? "current" : "locked",
       lockedHint: "Needs a processed material",
     },
-    { label: "Growth", detail: "Concept mastery", icon: TrendingUp, state: "locked" },
-    { label: "Analytics", detail: "Progress over time", icon: ChartColumn, state: "locked" },
+    {
+      label: "Growth",
+      href: `${base}/growth`,
+      detail: assessed ? `${pct(mastery.overallMastery)} mastery · ${mastery.needsAttention} need attention` : "After your first quiz",
+      icon: TrendingUp,
+      state: assessed ? "done" : "upcoming",
+    },
+    {
+      label: "Analytics",
+      href: `${base}/analytics`,
+      detail: tutorUsed || quizzesCompleted > 0 ? "Activity & performance" : "Progress over time",
+      icon: ChartColumn,
+      state: tutorUsed || quizzesCompleted > 0 ? "done" : "upcoming",
+    },
   ];
 
   return (
     <ol className="grid gap-3 sm:grid-cols-5">
-      {steps.map(({ label, detail, icon: Icon, state, lockedHint }, i) => (
+      {steps.map(({ label, detail, icon: Icon, state, href, lockedHint }, i) => (
         <li key={label} className="relative">
           {i < steps.length - 1 && (
             <span
@@ -70,12 +102,13 @@ function LearningPath({
               aria-hidden
             />
           )}
-          <div className="flex items-center gap-3 sm:flex-col sm:text-center">
+          <PathStep href={state === "locked" ? null : href}>
             <span
               className={cn(
                 "relative flex size-10 shrink-0 items-center justify-center rounded-xl",
                 state === "done" && "bg-blue-600 text-white",
                 state === "current" && "bg-white text-blue-600 ring-2 ring-blue-500 shadow-glow",
+                state === "upcoming" && "bg-blue-50 text-blue-500 ring-1 ring-blue-100",
                 state === "locked" && "bg-slate-100 text-slate-400",
               )}
             >
@@ -88,7 +121,7 @@ function LearningPath({
               <p className={cn("text-sm font-semibold", state === "locked" ? "text-slate-400" : "text-ink")}>{label}</p>
               <p className="text-xs text-muted">{state === "locked" ? (lockedHint ?? "Coming soon") : detail}</p>
             </div>
-          </div>
+          </PathStep>
         </li>
       ))}
     </ol>
@@ -157,12 +190,19 @@ function LearningProgress({ projectId, learning }: { projectId: string; learning
           {pluralize(learning.quizzesCompleted, "quiz", "quizzes")} completed · {pluralize(learning.questionsAnswered, "graded answer")}
           {learning.accuracy != null && <> · {pct(learning.accuracy)} correct</>}
         </p>
-        <Link
-          href={learning.activeQuiz ? `/projects/${projectId}/quiz/${learning.activeQuiz.id}` : `/projects/${projectId}/quiz`}
-          className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:text-blue-600"
-        >
-          {learning.activeQuiz ? "Resume your quiz" : assessed ? "Practise and see all concepts" : "Take a quiz"} <ArrowRight className="size-3.5" />
-        </Link>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <Link
+            href={learning.activeQuiz ? `/projects/${projectId}/quiz/${learning.activeQuiz.id}` : `/projects/${projectId}/quiz`}
+            className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:text-blue-600"
+          >
+            {learning.activeQuiz ? "Resume your quiz" : assessed ? "Practise" : "Take a quiz"} <ArrowRight className="size-3.5" />
+          </Link>
+          {assessed && (
+            <Link href={`/projects/${projectId}/growth`} className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:text-blue-600">
+              See your growth <ArrowRight className="size-3.5" />
+            </Link>
+          )}
+        </div>
       </CardBody>
     </Card>
   );
@@ -173,6 +213,7 @@ export default function ProjectOverviewPage() {
   const { data } = useProject(projectId); // loaded (and error-handled) by the layout
   const ready = data?.stats.materialsByStatus.ready ?? 0;
   const concepts = useConcepts(projectId, ready > 0);
+  const recommendations = useRecommendations(projectId, Boolean(data));
   if (!data) return null;
 
   const { project, stats, learning, recentMaterials, recentActivity, nextStep } = data;
@@ -183,13 +224,31 @@ export default function ProjectOverviewPage() {
       <Card>
         <CardHeader title="Learning path" description="Materials → Tutor → Quiz → Growth → Analytics" />
         <CardBody>
-          <LearningPath materialCount={stats.materialCount} pending={pending} ready={ready} learning={learning} />
+          <LearningPath projectId={project.id} materialCount={stats.materialCount} pending={pending} ready={ready} learning={learning} />
         </CardBody>
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <NextStepCard step={nextStep} />
+          {recommendations.data && recommendations.data.items.length > 0 ? (
+            <Card>
+              <CardHeader
+                title="What to do next"
+                description="Recommended from your mastery, recent mistakes and activity"
+                icon={<Sparkles />}
+                action={
+                  <Link href={`/projects/${project.id}/growth`} className="text-sm font-medium text-blue-700 hover:text-blue-600">
+                    Growth
+                  </Link>
+                }
+              />
+              <CardBody>
+                <RecommendationList projectId={project.id} items={recommendations.data.items} />
+              </CardBody>
+            </Card>
+          ) : (
+            <NextStepCard step={nextStep} />
+          )}
 
           {ready > 0 && (
             <Card>

@@ -63,7 +63,7 @@ export async function recordEvent(input: RecordEventInput): Promise<void> {
 }
 
 /** Account-level events and per-question answers are noise in a learner's timeline; admins and analytics still see them. */
-const LEARNER_HIDDEN_TYPES: ActivityType[] = ['user.logged_in', 'quiz.question_answered'];
+const LEARNER_HIDDEN_TYPES: ActivityType[] = ['user.logged_in', 'quiz.question_answered', 'recommendation.generated'];
 
 export async function listUserActivity(
   ownerId: string,

@@ -54,6 +54,8 @@ export const activityQuery = paginationSchema
   .refine((q) => !q.from || !q.to || q.from <= q.to, { message: '"from" must be before "to"', path: ['from'] });
 
 export const rangeQuery = z.object({ range: z.enum(['24h', '7d', '30d']).default('7d') });
+/** Analytics ranges (days): engagement and learning trends need longer windows than operational views. */
+export const analyticsRangeQuery = z.object({ range: z.enum(['7d', '30d', '90d']).default('30d') });
 
 const optionalText = (max: number) => z.preprocess(blankToUndefined, z.string().trim().max(max).optional());
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Bot, CalendarDays, Clock, ExternalLink, FileText, FolderKanban, GraduationCap, HardDrive, Layers, ListChecks, LogIn, Target, UserX } from "lucide-react";
+import { ArrowRight, Bot, CalendarDays, Clock, ExternalLink, FileText, FolderKanban, GraduationCap, HardDrive, Layers, ListChecks, LogIn, Target, TrendingUp, UserX } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ActivityFeed } from "@/components/activity-feed";
@@ -48,7 +48,7 @@ export default function AdminUserDetailPage() {
   }
   if (error || !data) return <ErrorState error={error} onRetry={() => refetch()} />;
 
-  const { user, stats, spaces, materials, recentActivity, aiUsage, assessments } = data;
+  const { user, stats, spaces, materials, recentActivity, aiUsage, assessments, growth } = data;
   const pctOf = (value: number | null) => (value == null ? "—" : `${Math.round(value * 100)}%`);
 
   return (
@@ -226,6 +226,82 @@ export default function AdminUserDetailPage() {
         </CardBody>
       </Card>
 
+      <Card>
+        <CardHeader
+          title="Growth & recommendations"
+          description="Learning streak, concept trends over the last 7 days, and how this learner responds to recommendations"
+          icon={<TrendingUp />}
+        />
+        <CardBody className="space-y-5">
+          <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4 lg:grid-cols-6">
+            {(
+              [
+                ["Current streak", `${growth.streak.current} day${growth.streak.current === 1 ? "" : "s"}`],
+                ["Longest streak", `${growth.streak.longest} day${growth.streak.longest === 1 ? "" : "s"}`],
+                ["Active days (30d)", formatNumber(growth.activeDays30)],
+                ["Recommendations", formatNumber(growth.recommendations.generated)],
+                ["Followed", `${formatNumber(growth.recommendations.completed)} · ${pctOf(growth.recommendations.actRate)}`],
+                ["Dismissed / expired", `${growth.recommendations.dismissed} / ${growth.recommendations.expired}`],
+              ] as Array<[string, string]>
+            ).map(([k, v]) => (
+              <div key={k}>
+                <dt className="text-xs text-muted">{k}</dt>
+                <dd className="mt-0.5 text-lg font-semibold text-ink tabular-nums">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div>
+              <p className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">Concept trends by project (7 days)</p>
+              {growth.projects.length === 0 ? (
+                <p className="text-sm text-muted">No assessed concepts yet.</p>
+              ) : (
+                <ul className="space-y-2.5">
+                  {growth.projects.map((p) => (
+                    <li key={p.projectId} className="rounded-xl border border-line px-3 py-2.5">
+                      <p className="truncate text-sm font-medium text-ink">{p.projectName}</p>
+                      <p className="mt-0.5 text-xs text-muted tabular-nums">
+                        <span className="font-semibold text-emerald-700">{p.counts.improving} improving</span> ·{" "}
+                        <span className="font-semibold text-rose-700">{p.counts.attention} need attention</span> · {p.counts.stable} stable
+                        {p.overallChange !== null && (
+                          <>
+                            {" "}
+                            · overall {p.overallChange >= 0 ? "+" : ""}
+                            {Math.round(p.overallChange * 100)} pts
+                          </>
+                        )}
+                      </p>
+                      {p.attention.length > 0 && (
+                        <p className="mt-1 text-xs text-muted">
+                          Needs attention: {p.attention.map((a) => `${a.name} (${pctOf(a.mastery)}${a.reasons[0] ? `, ${a.reasons[0]}` : ""})`).join(" · ")}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">Active recommendations</p>
+              {growth.recommendations.active.length === 0 ? (
+                <p className="text-sm text-muted">No active recommendations.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {growth.recommendations.active.map((r) => (
+                    <li key={r.id} className="py-2 text-sm first:pt-0">
+                      <p className="font-medium text-ink">{r.title}</p>
+                      <p className="text-xs text-muted">
+                        {r.projectName ?? "Deleted project"} · {r.kind.replace(/_/g, " ")} · {r.source === "ai" ? "AI-phrased" : "template"} · {timeAgo(r.createdAt)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="Learning journey" description="Spaces and the Projects inside them" />
@@ -270,9 +346,6 @@ export default function AdminUserDetailPage() {
                 </div>
               ))
             )}
-            <p className="rounded-xl border border-dashed border-line-strong bg-canvas/50 px-4 py-3 text-xs text-muted">
-              Growth over time and learning analytics for this learner appear here once those features are live.
-            </p>
           </CardBody>
         </Card>
 

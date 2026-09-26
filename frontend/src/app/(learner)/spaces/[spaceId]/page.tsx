@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import { ActivityFeed } from "@/components/activity-feed";
+import { LearningInsights } from "@/components/learning/learning-insights";
 import { ProjectFormDialog } from "@/components/projects/project-form-dialog";
 import { SpaceFormDialog } from "@/components/spaces/space-form-dialog";
 import { SpaceTile } from "@/components/space-visuals";
@@ -68,6 +69,7 @@ function SpaceView() {
   if (error || !data) return <ErrorState error={error} onRetry={() => refetch()} />;
 
   const { space, projects, stats, recentActivity } = data;
+  const progressOf = new Map(data.projectProgress.map((p) => [p.projectId, p]));
   const pending = stats.materialsByStatus.queued + stats.materialsByStatus.processing;
 
   async function confirmDelete() {
@@ -141,7 +143,7 @@ function SpaceView() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               {projects.map((project) => (
-                <ProjectCard key={project.id} project={project} />
+                <ProjectCard key={project.id} project={project} progress={progressOf.get(project.id)} />
               ))}
               <button
                 onClick={() => setProjectFormOpen(true)}
@@ -152,12 +154,15 @@ function SpaceView() {
             </div>
           )}
         </section>
-        <Card className="self-start">
-          <CardHeader title="Recent activity" description={`In ${space.name}`} />
-          <CardBody className="pt-3">
-            <ActivityFeed events={recentActivity} />
-          </CardBody>
-        </Card>
+        <div className="space-y-6 self-start">
+          {projects.length > 0 && <LearningInsights progress={data.progress} attention={data.attention} />}
+          <Card>
+            <CardHeader title="Recent activity" description={`In ${space.name}`} />
+            <CardBody className="pt-3">
+              <ActivityFeed events={recentActivity} />
+            </CardBody>
+          </Card>
+        </div>
       </div>
 
       <ProjectFormDialog

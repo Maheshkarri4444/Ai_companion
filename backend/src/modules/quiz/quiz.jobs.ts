@@ -1,6 +1,7 @@
 import { registerJobHandler } from '../../jobs/registry';
 import { toObjectId } from '../../lib/validation';
 import { QuizSession } from '../../models/quiz.model';
+import { enqueueRecommendationRefresh } from '../recommendations/recommendations.service';
 import { runLearningUpdate, runRepeatedMistake } from './learning';
 import { generateForSession } from './question-factory';
 import { gradePendingAttempt } from './quiz.service';
@@ -31,7 +32,13 @@ export function registerQuizJobs() {
     return runLearningUpdate(sessionId, { jobId: job._id.toString(), signal, lastAttempt: job.attempts >= job.maxAttempts });
   });
 
+  // Repeated-mistake workflow (PRD §13): identify the pattern → update the learning context → targeted recommendation.
   registerJobHandler('learning.repeated_mistake', async ({ job, signal }) => {
-    return runRepeatedMistake(job.payload as { attemptId: string; conceptId: string }, { jobId: job._id.toString(), signal });
+    const payload = job.payload as { attemptId: string; conceptId: string };
+    const result = await runRepeatedMistake(payload, { jobId: job._id.toString(), signal });
+    if ('pattern' in result && job.ownerId && job.projectId) {
+      await enqueueRecommendationRefresh({ ownerId: job.ownerId, projectId: job.projectId, reason: `mistake:${payload.attemptId}` });
+    }
+    return result;
   });
 }

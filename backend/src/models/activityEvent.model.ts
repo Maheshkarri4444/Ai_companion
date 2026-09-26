@@ -22,6 +22,9 @@ export const ACTIVITY_TYPES = [
   'quiz.question_answered',
   'quiz.completed',
   'mastery.updated',
+  'recommendation.generated',
+  'recommendation.completed',
+  'recommendation.dismissed',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

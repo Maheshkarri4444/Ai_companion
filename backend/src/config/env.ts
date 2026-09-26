@@ -16,7 +16,7 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   APP_ROLE: z.enum(['all', 'api', 'worker']).default('all'),
-  APP_VERSION: z.string().default('0.1.0'),
+  APP_VERSION: z.string().default('0.5.0'),
 
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
   MONGODB_DB_NAME: z.string().min(1).default('ai_study_companion'),

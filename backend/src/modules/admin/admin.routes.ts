@@ -6,6 +6,7 @@ import {
   activityQuery,
   adminMaterialParams,
   aiCallsQuery,
+  analyticsRangeQuery,
   evaluationsQuery,
   idParams,
   jobsQuery,
@@ -25,6 +26,7 @@ import {
   listAiCalls,
   listEvaluations,
 } from './ai-admin.service';
+import { getEngagement, getLearningAnalytics } from './analytics-admin.service';
 import { getJob, getJobsOverview, listJobs, retryJobAsAdmin } from './jobs-admin.service';
 import {
   getOverview,
@@ -77,6 +79,10 @@ adminRouter.get('/ai/calls/:callId', handler({ params: idParams('callId') }, ({ 
 adminRouter.get('/ai/evaluations/overview', handler({ query: rangeQuery }, ({ query }) => getEvaluationOverview(query)));
 adminRouter.get('/ai/evaluations', handler({ query: evaluationsQuery }, ({ query }) => listEvaluations(query)));
 adminRouter.get('/ai/eval-runs/:runId', handler({ params: idParams('runId') }, ({ params }) => getEvalRun(params.runId as string)));
+
+// Engagement & learning analytics (PRD §16)
+adminRouter.get('/engagement', handler({ query: analyticsRangeQuery }, ({ query }) => getEngagement(query.range)));
+adminRouter.get('/learning', handler({ query: analyticsRangeQuery }, ({ query }) => getLearningAnalytics(query.range)));
 
 // Background processing
 adminRouter.get('/jobs/overview', handler({}, () => getJobsOverview()));

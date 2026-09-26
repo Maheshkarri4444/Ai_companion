@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenCheck, CheckCircle2, ClipboardCheck, FlaskConical, Gavel, Hourglass, ListChecks, ThumbsUp, XCircle } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, ClipboardCheck, FlaskConical, Gavel, Hourglass, Lightbulb, ListChecks, Sparkles, Target, ThumbsUp, XCircle } from "lucide-react";
 import { Suspense, useState } from "react";
 import { AiCallDialog } from "@/components/admin/ai-call-dialog";
 import { bucketLabel, RangeTabs } from "@/components/admin/column-chart";
@@ -13,7 +13,7 @@ import { Select } from "@/components/ui/field";
 import { PageHeader, Pagination, StatCard } from "@/components/ui/misc";
 import { formatDateTime, formatNumber, timeAgo } from "@/lib/format";
 import { useEvalRun, useEvaluationOverview, useEvaluations } from "@/lib/queries";
-import type { AssessmentQuality, EvaluationOverview } from "@/lib/types";
+import type { AssessmentQuality, EvaluationOverview, RecommendationQuality } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const pct = (v: number | null | undefined) => (v == null ? "—" : `${Math.round(v * 1000) / 10}%`);
@@ -29,6 +29,7 @@ const SUBJECT_LABEL: Record<string, string> = {
   tutor_message: "Tutor answers",
   quiz_question: "Quiz questions",
   quiz_grading: "Quiz grading",
+  recommendation: "Recommendations",
 };
 const FLAG_LABEL: Record<string, string> = {
   regenerated: "Regenerated after validation",
@@ -40,6 +41,11 @@ const FLAG_LABEL: Record<string, string> = {
   evidence_not_in_answer: "Quoted evidence not in answer",
   score_disagreement: "Score vs. holistic disagreement",
   answer_flagged: "Answer tried to steer grading",
+  aligned_with_attention: "Top item ignores a weak area",
+  specific: "Doesn't name its concept",
+  numbers_supported: "Number not in the facts",
+  action_allowed: "Action not allowed",
+  ids_in_project: "Concept outside the Project",
 };
 const GROUNDING_TONE: Record<string, string> = {
   grounded: "bg-emerald-500",
@@ -271,6 +277,38 @@ function AssessmentQualitySection({ data }: { data: AssessmentQuality }) {
   );
 }
 
+function RecommendationQualitySection({ data }: { data: RecommendationQuality }) {
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-ink">
+          <Lightbulb className="size-5 text-blue-600" /> Recommendation quality
+        </h2>
+        <p className="text-sm text-muted">
+          Rules choose each next action from the learner&apos;s evidence; the model only rephrases it. Every recommendation is checked as the learner
+          reads it — relevant (names its concept), actionable (allowed action, ids in the Project) and aligned with what needs attention.
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Rule checks passed" value={pct(data.passRate)} icon={<ListChecks />} hint={`${formatNumber(data.checked)} recommendations checked`} />
+        <StatCard label="Aligned with attention" value={pct(data.alignedRate)} icon={<Target />} tone="indigo" hint={`Actionable ${pct(data.actionableRate)}`} />
+        <StatCard label="Phrased by AI" value={pct(data.aiPhrasedRate)} icon={<Sparkles />} tone="violet" hint="The rest kept the rule template" />
+        <StatCard
+          label="Followed by learners"
+          value={pct(data.followRate)}
+          icon={<ThumbsUp />}
+          tone="emerald"
+          hint={`${data.followed} followed · ${data.dismissed} dismissed of ${data.generated}`}
+        />
+      </div>
+      <Card className="p-5">
+        <p className="mb-3 font-display text-[15px] font-semibold text-ink">Rule failures</p>
+        <FlagList flags={data.topFlags} empty="No failed checks in this period." />
+      </Card>
+    </section>
+  );
+}
+
 function EvaluationView() {
   const [filters, setFilters] = useUrlFilters({ range: "7d", evaluator: "", verdict: "", subject: "", page: "1" });
   const page = Number(filters.page) || 1;
@@ -461,6 +499,7 @@ function EvaluationView() {
           </Card>
 
           <AssessmentQualitySection data={data.assessment} />
+          <RecommendationQualitySection data={data.recommendations} />
         </>
       )}
 

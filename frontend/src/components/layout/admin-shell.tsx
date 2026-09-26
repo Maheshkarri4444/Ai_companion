@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Bot, Cpu, FileText, FolderKanban, Gauge, Layers, LayoutDashboard, ShieldAlert, Users, Workflow } from "lucide-react";
+import { Activity, BarChart3, Bot, Cpu, FileText, FolderKanban, Gauge, GraduationCap, Layers, LayoutDashboard, ShieldAlert, Users, Workflow } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { buttonClasses } from "@/components/ui/button";
@@ -20,6 +20,13 @@ const sections: NavSection[] = [
       { href: "/admin/projects", label: "Projects", icon: FolderKanban },
       { href: "/admin/materials", label: "Materials", icon: FileText },
       { href: "/admin/activity", label: "Activity", icon: Activity },
+    ],
+  },
+  {
+    title: "Insights",
+    items: [
+      { href: "/admin/engagement", label: "Engagement", icon: BarChart3 },
+      { href: "/admin/learning", label: "Learning analytics", icon: GraduationCap },
     ],
   },
   {
