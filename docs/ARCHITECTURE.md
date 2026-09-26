@@ -5,9 +5,9 @@
 
 | | |
 |---|---|
-| **Version** | 1.4 |
+| **Version** | 1.5 |
 | **Last updated** | 2026-09-26 |
-| **Current phase** | Phases 1–5 ✅ built — Foundation, background knowledge pipeline, the AI layer (Zoya tutor, learning context, evaluation, observability), the adaptive quiz with mastery estimation, and growth analysis, recommendations and analytics (learner + admin). Phase 6 (hardening, docs, deployment) next |
+| **Current phase** | Phases 1–5 ✅ built — Foundation, background knowledge pipeline, the AI layer (Zoya tutor, learning context, evaluation, observability), the adaptive quiz with mastery estimation, and growth analysis, recommendations and analytics (learner + admin). Phase 6 in progress: **deployed** (https://ai-companion-two-jet.vercel.app) and submission documents written; remaining: offline quiz/recommendation eval suites, CI, hardening |
 | **Stack** | Next.js 16 · Node.js 22 / Express 5 · MongoDB Atlas 8 · Google Gemini |
 
 ---
@@ -1301,6 +1301,9 @@ The config is parsed with zod at startup and the process refuses to start on inv
 headers to every page (`X-Content-Type-Options`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy`, `Permissions-Policy`) — `/api/*` is excluded
 because the API sets its own (helmet). Set `BACKEND_URL` in the Vercel project (read at build time by the `/api` rewrite).
 
+**Live**: https://ai-companion-two-jet.vercel.app (health via the same origin: `/api/health`, `/api/health/ready`); step-by-step settings in
+[DEPLOYMENT.md](DEPLOYMENT.md).
+
 **Topology**: Vercel (Next.js; rewrites `/api/*` → Render) · Render web service (Express, `APP_ROLE=all`, health check `/api/health`) · MongoDB Atlas
 (network access open to the host; credentials only in env; Vector Search index created by a setup script).
 Production: `COOKIE_SECURE=true`, `NODE_ENV=production`, strong `JWT_SECRET`.
@@ -1380,7 +1383,11 @@ production build with MongoDB 8.2 and live Gemini (§29). Found and fixed during
 were squeezed by leading empty days, narrow cards truncated labels, a circular AI rationale ("48 % because it is below 50 %" → prompt `recommend.v2`),
 and the Space dashboard lacked the progress and attention view the PRD asks for (§4).
 
-**Phase 6 — Evaluation, hardening, docs & deployment** ⬜ offline eval suites for quiz generation/grading and recommendations (Tutor suite + admin eval view + online quiz and recommendation evaluation ✅), rate-limit/audit hardening, AI usage + prompts + evaluation + limitations docs (README panel tour ✅), Vercel + Render deployment (`vercel.json` ✅), demo
+**Phase 6 — Evaluation, hardening, docs & deployment** 🟡
+- ✅ Deployed: Vercel (frontend, `vercel.json` headers verified live) + Render (API + worker) + MongoDB Atlas — https://ai-companion-two-jet.vercel.app (2026-09-26)
+- ✅ Submission documents: [AI_USAGE.md](AI_USAGE.md), [DEVELOPMENT_PROMPTS.md](DEVELOPMENT_PROMPTS.md) (template, filled by the developer), [EVALUATION.md](EVALUATION.md), [TESTING.md](TESTING.md), [DEPLOYMENT.md](DEPLOYMENT.md), [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md), [FUTURE_IMPROVEMENTS.md](FUTURE_IMPROVEMENTS.md); README submission index and panel tour
+- ✅ Demo video (5:47, recorded on the live app): [`docs/demo/demo_ai_study_companion.mp4`](demo/demo_ai_study_companion.mp4), linked with chapters from the README
+- ⬜ Offline eval suites for quiz generation/grading and recommendations (Tutor suite + online quiz and recommendation evaluation ✅) · CI · rate-limit/session hardening
 
 ---
 
@@ -1431,6 +1438,7 @@ and the Space dashboard lacked the progress and attention view the PRD asks for 
 | Date | Version | Change |
 |---|---|---|
 | 2026-09-25 | 1.0 | Initial architecture for all phases. Verified MongoDB Atlas (8.0, replica set) and Gemini model availability for the provided key; chose model defaults and a fallback chain accordingly. Phase 1 started. |
+| 2026-09-26 | 1.5 | Deployed to Vercel + Render + Atlas (live URL in §30). Submission documents added (AI usage, development prompts template, evaluation approach, testing guide, deployment guide, known limitations, future improvements) and linked from the README; demo video added under `docs/demo/`. |
 | 2026-09-26 | 1.4 | Phase 5 built — growth analysis (§18), recommendations with rule candidates, validated AI phrasing, evaluation and lifecycle (§19), Project / global analytics and the full Home dashboard, Space progress and attention (§21), admin Engagement and Learning analytics, learner growth block and recommendation quality (§22, §24); repeated-mistake → recommendation workflow; branded 404 and `vercel.json` (§28, §30). Phase 4 suites run green (183) after a fixture fix; 195 tests. App version 0.5.0. Decisions D30–D35. |
 | 2026-09-25 | 1.3 | Phase 4 built — adaptive quiz & mastery: sessions (adaptive / focused / review), evidence-based selection with explanations, grounded generation with rule validation and feedback-driven regeneration, exact / rubric grading with quote-verified key points and server-computed scores, Elo/IRT-style mastery with decay, confidence and exactly-once updates + snapshots, learning workflows (repeated mistakes, post-quiz strengths/weaknesses), Zoya integration (`get_mastery`, `propose_quiz`, mastery and assessment-history context), quiz evaluation (generation/grading rules, question judge, learner reports) and admin views, reconciler coverage for interrupted quiz work, bounded synchronous waits (D28), quiz UI. Evaluator headline cards now count Tutor answers only. Decisions D24–D29. 183 backend tests (MongoDB-backed suites to be run where MongoDB is available — see §31). |
 | 2026-09-25 | 1.2 | Phases 2–3 built and verified: job queue/worker/reconciler, knowledge pipeline, hybrid retrieval, AI gateway, Zoya (grounded streaming Tutor with validated citations, tools, continuity, idempotency, Stop, restart/extractive fallbacks), persistent learning context + provider registry, evaluation (rules, judge, feedback, offline suite), admin AI usage/evaluation/jobs, Tutor UI. Live findings recorded: Gemini schema limitation (D19), thresholds calibrated for gemini-embedding-2 (0.72/0.58), immediate breaker on 503/429, judge moved to primary tier (D21), small-talk override closing an evidence-gate bypass. 139 tests; eval suite 18/18. |

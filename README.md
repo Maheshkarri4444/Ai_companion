@@ -4,11 +4,47 @@ An AI-powered learning workspace: learners organise study into **Spaces** and **
 AI Tutor, take adaptive quizzes and get evidence-based guidance on what to do next. An **Admin console** gives operators visibility into
 users, learning activity, AI usage and system health.
 
-> **Status — Phases 1–5 complete (v0.5.0).** Authentication, the learner workspace, background document processing, the complete AI layer —
+**Live app: https://ai-companion-two-jet.vercel.app** — frontend on Vercel, API + background worker on Render, MongoDB Atlas, Google Gemini.
+
+> **Status — v0.5.0, deployed.** Authentication, the learner workspace, background document processing, the complete AI layer —
 > **Zoya, the grounded AI tutor**, persistent learning context, AI observability and evaluation — the **adaptive quiz with concept mastery**,
-> and **growth analysis, recommendations and analytics** for learners and admins are built (195 backend tests; live Tutor regression suite 18/18
-> on Gemini). Deployment and final hardening follow in Phase 6. The full design, decisions and build status live in
-> **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (version 1.4).
+> and **growth analysis, recommendations and analytics** for learners and admins (195 backend tests; live Tutor regression suite 18/18 on Gemini).
+> The full design, decisions and build status live in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+
+## Submission
+
+| Deliverable | Where |
+|---|---|
+| Working application | **https://ai-companion-two-jet.vercel.app** (admin credentials for reviewers are shared privately) |
+| Demo video | **[▶ Watch the demo (5:47)](docs/demo/demo_ai_study_companion.mp4)** — chapters in [Demo video](#demo-video) |
+| Source code, setup, configuration examples, testing and deployment | this repository — [Setup](#setup) · [`backend/.env.example`](backend/.env.example) · [`frontend/.env.example`](frontend/.env.example) · [Testing](docs/TESTING.md) · [Deployment](docs/DEPLOYMENT.md) |
+| Architecture documentation (diagram + decisions) | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): diagram in [§3](docs/ARCHITECTURE.md#3-system-overview), decisions in [§32](docs/ARCHITECTURE.md#32-key-decisions-simplifications--future-work) |
+| AI usage documentation | [docs/AI_USAGE.md](docs/AI_USAGE.md): AI used to build the product vs. AI used by the product |
+| Development prompts | [docs/DEVELOPMENT_PROMPTS.md](docs/DEVELOPMENT_PROMPTS.md) |
+| Evaluation approach | [docs/EVALUATION.md](docs/EVALUATION.md) |
+| Known limitations | [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md) |
+| Future improvements | [docs/FUTURE_IMPROVEMENTS.md](docs/FUTURE_IMPROVEMENTS.md) |
+
+## Demo video
+
+**The demo video is here: [▶ docs/demo/demo_ai_study_companion.mp4](docs/demo/demo_ai_study_companion.mp4)** (5 min 47 s, recorded on the live app).
+
+<a href="docs/demo/demo_ai_study_companion.mp4"><img src="docs/demo/demo-thumbnail.jpg" width="640" alt="Demo video: click to watch"></a>
+
+| Time | What it shows |
+|---|---|
+| 0:00 | Register a learner account |
+| 0:15 | Create a Space and a Project with a learning goal |
+| 0:45 | Upload a PDF; background processing until *Ready* |
+| 1:05 | Ask Zoya: grounded answers with page citations; the source viewer highlights the passage (1:15) |
+| 1:55 | Summarize, revision plan and *Test me* |
+| 2:20 | Adaptive quiz: multiple-choice feedback with the source and mastery change, then a written answer graded against a rubric (3:05) |
+| 3:45 | Quiz results: score, mastery by concept, strengths and what needs work |
+| 3:50 | Growth analysis and *What to do next* recommendations |
+| 4:05 | Focused practice quiz |
+| 4:35 | Project analytics |
+| 4:45 | Admin console: overview, learner detail, Spaces, Projects, Engagement, Learning analytics |
+| 5:20 | Admin: System health, AI usage, AI evaluation, Background jobs |
 
 ## App tour
 
@@ -138,7 +174,8 @@ npm run build
 ```
 
 Backend tests run against an in-memory MongoDB (the first run downloads a MongoDB binary from `fastdl.mongodb.org`, so that host must be
-reachable) and a scriptable mock AI provider — no Atlas data, no model costs.
+reachable) and a scriptable mock AI provider — no Atlas data, no model costs. What each suite covers, plus a manual end-to-end walkthrough of the
+whole learning loop, is in **[docs/TESTING.md](docs/TESTING.md)**.
 
 ### Live AI regression suite
 
@@ -153,12 +190,16 @@ npm --prefix backend run eval:tutor -- --judge --baseline
 `--baseline` exits with code 1 when a metric regresses more than 5 points against `backend/evals/tutor/baseline.json`; `--record` also stores the
 run so it appears in **Admin → AI evaluation**; `--write-baseline` accepts the current run as the new baseline.
 
-## Deploy (Phase 6)
+## Deployment
 
-- **Frontend → Vercel**: set the project's Root Directory to `frontend`. [`frontend/vercel.json`](frontend/vercel.json) pins the Next.js build and adds
-  security headers; set `BACKEND_URL` to the API's public origin (read at build time for the `/api` rewrite).
-- **API + worker → Render** (or any Node 22 host): `npm ci && npm run build`, start with `npm start`, health check `/api/health`, env from
-  `backend/.env.example` with `NODE_ENV=production` and `COOKIE_SECURE=true`. Allow the host in MongoDB Atlas network access.
+Live at **https://ai-companion-two-jet.vercel.app** (health: [`/api/health`](https://ai-companion-two-jet.vercel.app/api/health)).
+
+- **Frontend → Vercel**: Root Directory `frontend`; [`frontend/vercel.json`](frontend/vercel.json) pins the Next.js build and adds security headers;
+  set `BACKEND_URL` to the API's public origin (read at build time for the `/api` rewrite).
+- **API + worker → Render**: Root Directory `backend`, `npm ci --include=dev && npm run build`, start with `npm start`, health check `/api/health`,
+  env from `backend/.env.example` with `NODE_ENV=production` and `COOKIE_SECURE=true`. Allow the host in MongoDB Atlas network access.
+
+Step-by-step settings, environment variables, a smoke test and troubleshooting: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
 ## What's built
 
@@ -221,3 +262,9 @@ validated AI output, rate limits, and admin-only APIs.
 - [Architecture](docs/ARCHITECTURE.md): system design for every phase, data model, API reference, the AI layer and Tutor pipeline
   (§12–§15), the adaptive quiz and mastery model (§16–§17), growth, recommendations and analytics (§18–§21), learning context (§20),
   the admin console (§22), observability and evaluation results (§23–§24), security, testing, deployment, build status and decision log.
+- [AI usage](docs/AI_USAGE.md): AI used to build the product (development tools) vs. AI used by the product (models, features, guardrails).
+- [Development prompts](docs/DEVELOPMENT_PROMPTS.md): the prompts used with AI development tools, by area.
+- [Evaluation approach](docs/EVALUATION.md): how Tutor quality, retrieval, assessments, mastery and recommendations are evaluated, with results.
+- [Testing](docs/TESTING.md): automated suites, the live AI regression suite and a manual end-to-end walkthrough (also the demo script).
+- [Deployment](docs/DEPLOYMENT.md): Vercel + Render + Atlas settings, smoke test and troubleshooting.
+- [Known limitations](docs/KNOWN_LIMITATIONS.md) · [Future improvements](docs/FUTURE_IMPROVEMENTS.md).
